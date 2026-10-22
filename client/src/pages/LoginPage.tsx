@@ -286,25 +286,27 @@ export const LoginPage: React.FC = () => {
               </button>
             </form>
 
-            {/* Quick 1-Click Demo Shortcut */}
-            <div className="pt-4 border-t border-slate-100 text-center space-y-3">
-              <p className="text-[11px] font-semibold text-slate-400">
-                Development & Testing Shortcut
-              </p>
-              <button
-                type="button"
-                onClick={handleQuickDemo}
-                disabled={loading}
-                className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 transition-colors border border-slate-200/80"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-medical-600" />
-                <span>
-                  {activeRole === 'PATIENT' && '1-Click Demo Patient (John Doe)'}
-                  {activeRole === 'DOCTOR' && '1-Click Demo Doctor (Dr. Ananya Deshmukh)'}
-                  {activeRole === 'SUPER_ADMIN' && '1-Click Demo Admin (Dr. Rajesh Kumar)'}
-                </span>
-              </button>
-            </div>
+            {/* Quick 1-Click Demo Shortcut - Strictly excluded from production */}
+            {import.meta.env.DEV && import.meta.env.VITE_ENABLE_DEV_DEMO !== 'false' && (
+              <div className="pt-4 border-t border-slate-100 text-center space-y-3">
+                <p className="text-[11px] font-semibold text-slate-400">
+                  Development & Testing Shortcut (Disabled in Production)
+                </p>
+                <button
+                  type="button"
+                  onClick={handleQuickDemo}
+                  disabled={loading}
+                  className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 transition-colors border border-slate-200/80"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-medical-600" />
+                  <span>
+                    {activeRole === 'PATIENT' && '1-Click Demo Patient (John Doe)'}
+                    {activeRole === 'DOCTOR' && '1-Click Demo Doctor (Dr. Ananya Deshmukh)'}
+                    {activeRole === 'SUPER_ADMIN' && '1-Click Demo Admin (Dr. Rajesh Kumar)'}
+                  </span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

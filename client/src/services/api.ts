@@ -154,6 +154,13 @@ export const api = {
     return res.json();
   },
 
+  getPrescriptionById: async (id: string) => {
+    const res = await fetch(`${API_BASE}/prescriptions/${id}`, {
+      headers: getHeaders(),
+    });
+    return res.json();
+  },
+
   // AI Services
   askHealthAssistant: async (
     question: string,

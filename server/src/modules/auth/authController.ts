@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { User } from '../../models/User';
 import { Patient } from '../../models/Patient';
+import { Doctor } from '../../models/Doctor';
 import { AuthRequest } from '../../middleware/auth';
 import { env } from '../../config/env';
 import { OtpService } from '../../services/otp/otpService';
@@ -111,28 +112,63 @@ export const verifyOTP = async (req: Request, res: Response): Promise<void> => {
           : ['patient:read', 'patient:write', 'appointment:book'],
     });
 
-    // Create Patient Profile
-    await Patient.create({
-      userId: user._id,
-      fullName: user.fullName,
-      dob: new Date('1994-05-14'),
-      gender: 'MALE',
-      bloodGroup: 'O+',
-      allergies: [{ allergen: 'Penicillin', severity: 'HIGH', reaction: 'Skin rash' }],
-      chronicConditions: ['Type-2 Diabetes', 'Hypertension (Mild)'],
-      currentMedications: ['Metformin 500mg (OD)', 'Telmisartan 20mg (OD)'],
-      emergencyContact: { name: 'Sarah (Spouse)', relationship: 'SPOUSE', phone: '+91 98450 11223' },
-      abhaId: 'john.doe@abdm',
-      abhaNumber: '91-4920-1129-8472',
-      address: { city: 'Bangalore', state: 'Karnataka', postalCode: '560034' },
-      familyMembers: [
-        { name: 'Sarah Doe', relationship: 'SPOUSE', dob: new Date('1996-08-20'), gender: 'FEMALE', bloodGroup: 'B+' },
-        { name: 'Liam Doe', relationship: 'CHILD', dob: new Date('2021-02-10'), gender: 'MALE', bloodGroup: 'O+' },
-      ],
-    });
+    if (requestedRole === 'PATIENT') {
+      // Create Patient Profile
+      await Patient.create({
+        userId: user._id,
+        fullName: user.fullName,
+        dob: new Date('1994-05-14'),
+        gender: 'MALE',
+        bloodGroup: 'O+',
+        allergies: [],
+        chronicConditions: [],
+        currentMedications: [],
+        emergencyContact: { name: 'Emergency Contact', relationship: 'FAMILY', phone: normalizedPhone },
+        address: { city: 'Bangalore', state: 'Karnataka', postalCode: '560034' },
+        familyMembers: [],
+      });
+    } else if (requestedRole === 'DOCTOR') {
+      // Link or create Doctor Profile
+      let doctor = await Doctor.findOne({
+        $or: [
+          { userId: user._id },
+          { fullName: new RegExp(user.fullName.replace(/\s*\([^)]*\)/, '').trim(), 'i') },
+        ],
+      });
+      if (doctor) {
+        doctor.userId = user._id;
+        await doctor.save();
+      } else {
+        await Doctor.create({
+          userId: user._id,
+          fullName: user.fullName,
+          specialties: ['General Medicine'],
+          qualification: ['MBBS', 'MD'],
+          experienceYears: 10,
+          consultationFee: 700,
+          rating: 4.8,
+          languages: ['English', 'Hindi'],
+          isAvailableToday: true,
+          bio: 'Verified consulting physician on AegisHealth clinical network.',
+        });
+      }
+    }
   }
 
-  const patient = await Patient.findOne({ userId: user._id });
+  const patient = user.role === 'PATIENT' ? await Patient.findOne({ userId: user._id }) : null;
+  let doctor: any = null;
+  if (user.role === 'DOCTOR') {
+    doctor = await Doctor.findOne({
+      $or: [
+        { userId: user._id },
+        { fullName: new RegExp(user.fullName.replace(/\s*\([^)]*\)/, '').trim(), 'i') },
+      ],
+    });
+    if (doctor && (!doctor.userId || doctor.userId.toString() !== user._id.toString())) {
+      doctor.userId = user._id;
+      await doctor.save();
+    }
+  }
 
   const token = jwt.sign(
     { id: user._id, role: user.role, permissions: user.permissions },
@@ -150,6 +186,7 @@ export const verifyOTP = async (req: Request, res: Response): Promise<void> => {
         fullName: user.fullName,
         role: user.role,
         patientId: patient?._id,
+        doctorId: doctor?._id,
       },
     },
     message: 'Authentication successful',
@@ -174,13 +211,15 @@ export const getCurrentUser = async (req: AuthRequest, res: Response): Promise<v
       return;
     }
 
-    const patient = await Patient.findOne({ userId: user._id });
+    const patient = user.role === 'PATIENT' ? await Patient.findOne({ userId: user._id }) : null;
+    const doctor = user.role === 'DOCTOR' ? await Doctor.findOne({ userId: user._id }) : null;
 
     res.json({
       success: true,
       data: {
         user,
         patient,
+        doctor,
       },
       message: 'Profile retrieved',
     });

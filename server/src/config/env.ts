@@ -95,8 +95,8 @@ export function validateAndLoadConfig(): AppConfig {
     TWILIO_PHONE_NUMBER: process.env.TWILIO_PHONE_NUMBER,
     CORS_ORIGIN: corsOrigin,
     RATE_LIMIT_WINDOW_MS: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10), // 15 mins default
-    RATE_LIMIT_MAX_AUTH: parseInt(process.env.RATE_LIMIT_MAX_AUTH || '15', 10), // 15 attempts / 15m default
-    RATE_LIMIT_MAX_BOOKING: parseInt(process.env.RATE_LIMIT_MAX_BOOKING || '30', 10), // 30 bookings / 15m default
+    RATE_LIMIT_MAX_AUTH: parseInt(process.env.RATE_LIMIT_MAX_AUTH || (nodeEnv === 'test' ? '500' : '15'), 10),
+    RATE_LIMIT_MAX_BOOKING: parseInt(process.env.RATE_LIMIT_MAX_BOOKING || (nodeEnv === 'test' ? '500' : '30'), 10),
   };
 }
 

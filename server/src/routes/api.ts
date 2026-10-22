@@ -16,24 +16,66 @@ import {
 } from '../modules/appointments/appointmentSchemas';
 import { validateBody } from '../middleware/validation';
 import { getHealthTimeline, createMedicalRecord } from '../modules/records/recordController';
-import { createPrescription, getMyPrescriptions } from '../modules/prescriptions/prescriptionController';
+import { createPrescription, getMyPrescriptions, getPrescriptionById } from '../modules/prescriptions/prescriptionController';
 import { queryHealthAssistant, generateSoapDraft, analyzeReportDocument } from '../modules/ai/aiController';
-import { authenticate } from '../middleware/auth';
+import { authenticate, requireRole } from '../middleware/auth';
 import { authRateLimiter, bookingRateLimiter } from '../middleware/rateLimiter';
+
+import { isDbConnected, getDbState } from '../config/db';
 
 const router = Router();
 
-// Health Check
-router.get('/health', (req, res) => {
+// Liveness Check (Process running)
+router.get('/live', (req, res) => {
   res.json({
-    status: 'HEALTHY',
-    version: '1.0.0-PROD',
+    status: 'ALIVE',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Readiness Check (Database and critical dependencies ready)
+router.get('/ready', (req, res) => {
+  const dbConnected = isDbConnected();
+  if (!dbConnected) {
+    res.status(503).json({
+      ready: false,
+      status: 'NOT_READY',
+      services: {
+        database: getDbState(),
+      },
+      message: 'Database connection not ready to receive clinical traffic.',
+    });
+    return;
+  }
+
+  res.json({
+    ready: true,
+    status: 'READY',
+    services: {
+      database: 'CONNECTED',
+    },
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Accurate Subsystem Health Check
+router.get('/health', (req, res) => {
+  const dbConnected = isDbConnected();
+  const hasLiveAiKey = Boolean(process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY);
+
+  const overallStatus = dbConnected ? (hasLiveAiKey ? 'HEALTHY' : 'DEGRADED_LOCAL_AI') : 'UNHEALTHY';
+  const statusCode = dbConnected ? 200 : 503;
+
+  res.status(statusCode).json({
+    status: overallStatus,
+    version: '1.0.0',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     services: {
       api: 'UP',
-      database: 'CONNECTED',
-      aiEngine: 'READY',
+      database: getDbState(),
+      aiEngine: hasLiveAiKey ? 'LIVE_PROVIDER_CONFIGURED' : 'LOCAL_CLINICAL_SYNTHESIZER',
       telehealthGateway: 'OPERATIONAL',
     },
   });
@@ -63,8 +105,9 @@ router.get('/records/timeline', authenticate, getHealthTimeline);
 router.post('/records/upload', authenticate, createMedicalRecord);
 
 // Digital Prescriptions Endpoints
-router.post('/prescriptions', authenticate, createPrescription);
+router.post('/prescriptions', authenticate, requireRole('DOCTOR', 'SUPER_ADMIN'), createPrescription);
 router.get('/prescriptions/my', authenticate, getMyPrescriptions);
+router.get('/prescriptions/:id', authenticate, getPrescriptionById);
 
 // AI Health & Clinical Services
 router.post('/ai/chat', authenticate, queryHealthAssistant);

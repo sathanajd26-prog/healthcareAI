@@ -1,5 +1,6 @@
-import { describe, it } from 'node:test';
+import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
+import { ensureTestServer, closeTestServer } from './testSetup';
 
 const API_BASE = process.env.API_BASE_URL || 'http://127.0.0.1:5001/api/v1';
 
@@ -23,6 +24,13 @@ async function apiRequest(endpoint: string, options: { method?: string; token?: 
 }
 
 describe('AegisHealth Appointment Security & Concurrency Milestone Test Suite', () => {
+  before(async () => {
+    await ensureTestServer();
+  });
+
+  after(async () => {
+    await closeTestServer();
+  });
   let patientAToken: string;
   let patientBToken: string;
   let testDoctorId = '6ad20d8457d5731401876328'; // Dr. Ananya Deshmukh

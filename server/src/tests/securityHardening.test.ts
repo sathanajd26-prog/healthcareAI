@@ -1,6 +1,7 @@
-import { describe, it } from 'node:test';
+import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 import { validateAndLoadConfig } from '../config/env';
+import { ensureTestServer, closeTestServer } from './testSetup';
 
 const API_BASE = process.env.API_BASE_URL || 'http://127.0.0.1:5001/api/v1';
 
@@ -24,6 +25,13 @@ async function apiRequest(endpoint: string, options: { method?: string; token?: 
 }
 
 describe('AegisHealth Milestone 2: Security Hardening & Runtime Verification Test Suite', () => {
+  before(async () => {
+    await ensureTestServer();
+  });
+
+  after(async () => {
+    await closeTestServer();
+  });
 
   describe('1. Production Secret Validation & Startup Safeguards', () => {
     it('Fails startup when JWT_SECRET is missing in production', () => {

@@ -8,7 +8,7 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "seed": "ts-node-dev --transpile-only src/seed/seedData.ts",
-    "test": "tsc && node --test dist/tests/*.test.js"
+    "test": "tsc && node --test --test-concurrency=1 dist/tests/appointmentWorkflow.test.js dist/tests/securityHardening.test.js dist/tests/clinicalSecurity.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

@@ -18,13 +18,40 @@ const AuthContext = createContext<AuthContextType>({} as AuthContextType);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
-  const [activeFamilyMember, setActiveFamilyMember] = useState<string>('Self (John Doe)');
+  const [activeFamilyMember, setActiveFamilyMember] = useState<string>('Self');
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
+  // Sync active family member with user's name when user authenticates
+  useEffect(() => {
+    if (user?.fullName) {
+      setActiveFamilyMember(`Self (${user.fullName})`);
+    } else {
+      setActiveFamilyMember('Self');
+    }
+  }, [user?.fullName]);
+
+  /**
+   * Explicit Demo Login - Strictly restricted to development environments.
+   * Never called automatically on startup.
+   */
   const loginDemo = async (role: 'PATIENT' | 'DOCTOR' | 'SUPER_ADMIN' = 'PATIENT') => {
+    // 1. Strict production safeguard
+    if (import.meta.env.PROD) {
+      console.error('[Security Violation] Demo credentials and shortcuts are strictly forbidden in production.');
+      return;
+    }
+
+    // 2. Explicit development flag verification
+    const isDev = import.meta.env.DEV;
+    const devShortcutAllowed = import.meta.env.VITE_ENABLE_DEV_DEMO !== 'false';
+    if (!isDev || !devShortcutAllowed) {
+      console.warn('[Security] Demo login shortcut is disabled in this environment.');
+      return;
+    }
+
     try {
       let phone = '+919876543210';
-      let name = 'John Doe (Patient)';
+      let name = 'Demo Patient';
       if (role === 'DOCTOR') {
         phone = '+919876543211';
         name = 'Dr. Ananya Deshmukh (Cardiologist)';
@@ -34,12 +61,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       const res = await api.verifyOTP(phone, '123456', name, role);
-      if (res.success) {
+      if (res.success && res.data?.token) {
         localStorage.setItem('token', res.data.token);
         localStorage.setItem('auth_role', role);
         localStorage.removeItem('auth_guest');
         setToken(res.data.token);
         setUser(res.data.user);
+      } else {
+        console.error('Demo auth rejected by server:', res.error);
       }
     } catch (err) {
       console.error('Demo auth failed:', err);
@@ -48,30 +77,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     const initAuth = async () => {
-      const isGuest = localStorage.getItem('auth_guest') === 'true';
       const storedToken = localStorage.getItem('token');
-
-      if (isGuest && !storedToken) {
-        // User intentionally testing or browsing as unauthenticated guest
-        setUser(null);
-        setToken(null);
-        setIsLoading(false);
-        return;
-      }
 
       if (storedToken) {
         try {
           const res = await api.getCurrentUser();
-          if (res.success) {
+          if (res.success && res.data?.user) {
             setUser(res.data.user);
+            setToken(storedToken);
           } else {
-            await loginDemo();
+            // Token expired or invalid on server
+            localStorage.removeItem('token');
+            localStorage.removeItem('auth_role');
+            setToken(null);
+            setUser(null);
           }
         } catch {
-          await loginDemo();
+          // Network failure or invalid token
+          localStorage.removeItem('token');
+          localStorage.removeItem('auth_role');
+          setToken(null);
+          setUser(null);
         }
       } else {
-        await loginDemo();
+        // Unauthenticated visitor
+        setUser(null);
+        setToken(null);
       }
       setIsLoading(false);
     };
@@ -82,7 +113,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = async (phone: string, otp: string, fullName?: string, role?: string): Promise<boolean> => {
     try {
       const res = await api.verifyOTP(phone, otp, fullName, role);
-      if (res.success) {
+      if (res.success && res.data?.token) {
         localStorage.setItem('token', res.data.token);
         localStorage.removeItem('auth_guest');
         setToken(res.data.token);
@@ -102,6 +133,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem('auth_guest', 'true');
     setToken(null);
     setUser(null);
+    setActiveFamilyMember('Self');
   };
 
   const switchRole = async (targetRole: 'PATIENT' | 'DOCTOR' | 'SUPER_ADMIN' | 'GUEST') => {
@@ -111,6 +143,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(false);
       return;
     }
+    // Only allows explicit developer trigger in development mode
     await loginDemo(targetRole);
     setIsLoading(false);
   };

@@ -33,9 +33,9 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     );
   }
 
-  // If unauthenticated guest, block access to protected page and redirect to public home
+  // If unauthenticated guest, block access to protected page and redirect to login
   if (!token || !user) {
-    return <Navigate to={fallbackPath || '/'} state={{ from: location }} replace />;
+    return <Navigate to={fallbackPath || '/login'} state={{ from: location }} replace />;
   }
 
   // If role is restricted and user's role is not authorized, redirect to their authorized role home
