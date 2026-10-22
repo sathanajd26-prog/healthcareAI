@@ -94,6 +94,13 @@ export const api = {
     return res.json();
   },
 
+  getDoctorQueue: async () => {
+    const res = await fetch(`${API_BASE}/appointments/doctor-queue`, {
+      headers: getHeaders(),
+    });
+    return res.json();
+  },
+
   getDoctorSlots: async (doctorId: string, date?: string) => {
     const query = date ? `?date=${encodeURIComponent(date)}` : '';
     const res = await fetch(`${API_BASE}/doctors/${doctorId}/slots${query}`, {

@@ -23,27 +23,24 @@ export const EmergencySOSPage: React.FC = () => {
       distance: '1.2 km away',
       address: 'Old Airport Road, Kodihalli, Bangalore',
       phone: '+91 80 2502 4444',
-      erBedsAvailable: 8,
+      serviceStatus: '24/7 Trauma Care Operational',
       icuEquipped: true,
-      etaMinutes: 6,
     },
     {
       name: 'Apollo Hospital 24/7 Emergency Wing',
       distance: '2.8 km away',
       address: 'Jayanagar 4th Block, Bangalore',
       phone: '+91 80 2630 4050',
-      erBedsAvailable: 4,
+      serviceStatus: '24/7 Emergency Wing Operational',
       icuEquipped: true,
-      etaMinutes: 11,
     },
     {
       name: 'Fortis Emergency & Cardiac Care',
       distance: '4.5 km away',
       address: 'Bannerghatta Main Road, Bangalore',
       phone: '+91 80 6621 4444',
-      erBedsAvailable: 6,
+      serviceStatus: '24/7 Cardiac ER Active',
       icuEquipped: true,
-      etaMinutes: 16,
     },
   ];
 
@@ -192,7 +189,7 @@ export const EmergencySOSPage: React.FC = () => {
                 <div className="flex items-center space-x-2">
                   <h3 className="text-sm font-bold text-slate-900">{hosp.name}</h3>
                   <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded">
-                    {hosp.erBedsAvailable} ER Beds Open
+                    {hosp.serviceStatus}
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 mt-1 flex items-center">
@@ -201,7 +198,7 @@ export const EmergencySOSPage: React.FC = () => {
                 </p>
                 <p className="text-[11px] text-teal-700 font-semibold mt-1 flex items-center">
                   <Clock className="w-3.5 h-3.5 mr-1" />
-                  <span>Estimated Ambulance ETA: {hosp.etaMinutes} mins</span>
+                  <span>Direct Emergency Dispatch Line: {hosp.phone}</span>
                 </p>
               </div>
 

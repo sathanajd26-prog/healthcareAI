@@ -51,7 +51,7 @@ export const PatientDashboardPage: React.FC = () => {
   const [prescriptionsLoading, setPrescriptionsLoading] = useState(false);
   const [newRxNotice, setNewRxNotice] = useState<string | null>(null);
 
-  // Medication tracker state
+  // Medication tracker state (populated strictly from verified digital prescriptions)
   const [meds, setMeds] = useState<Array<{
     id: string | number;
     name: string;
@@ -59,11 +59,7 @@ export const PatientDashboardPage: React.FC = () => {
     status: 'TAKEN' | 'PENDING';
     instruction: string;
     rxNumber?: string;
-  }>>([
-    { id: 1, name: 'Metformin 500mg', time: '08:00 AM', status: 'TAKEN', instruction: 'After breakfast' },
-    { id: 2, name: 'Telmisartan 20mg', time: '01:00 PM', status: 'TAKEN', instruction: 'With lunch' },
-    { id: 3, name: 'Multivitamin B-Complex', time: '08:00 PM', status: 'PENDING', instruction: 'After dinner' },
-  ]);
+  }>>([]);
 
   const fetchPrescriptions = async () => {
     setPrescriptionsLoading(true);
@@ -74,50 +70,32 @@ export const PatientDashboardPage: React.FC = () => {
         serverRx = res.data;
       }
 
-      // Merge with locally stored prescriptions if any
-      let localRx: any[] = [];
-      try {
-        localRx = JSON.parse(localStorage.getItem('aegis_prescriptions') || '[]');
-      } catch (e) {
-        // ignore
-      }
+      setPrescriptions(serverRx);
 
-      const combinedMap = new Map();
-      [...serverRx, ...localRx].forEach((rx: any) => {
-        const key = rx.prescriptionNumber || rx._id || JSON.stringify(rx.medications);
-        if (!combinedMap.has(key)) {
-          combinedMap.set(key, rx);
-        }
-      });
-
-      const mergedList = Array.from(combinedMap.values());
-      setPrescriptions(mergedList);
-
-      // Extract new medications from prescriptions into the daily tracker list
-      if (mergedList.length > 0) {
+      // Extract genuine medications from server prescriptions into the daily tracker list
+      if (serverRx.length > 0) {
         const derivedMeds: any[] = [];
-        mergedList.forEach((rx, rxIdx) => {
+        serverRx.forEach((rx, rxIdx) => {
           (rx.medications || []).forEach((m: any, mIdx: number) => {
             derivedMeds.push({
-              id: `rx-${rxIdx}-${mIdx}-${m.name}`,
+              id: `rx-${rx._id || rxIdx}-${mIdx}-${m.name}`,
               name: `${m.name} ${m.dosage || ''}`.trim(),
               time: m.frequency || m.freq || 'Daily',
-              status: 'PENDING',
-              instruction: m.instructions || 'As advised by doctor',
+              status: 'PENDING' as const,
+              instruction: m.instructions || 'As advised by physician',
               rxNumber: rx.prescriptionNumber || 'RX-VERIFIED'
             });
           });
         });
 
-        // Merge with existing default tracker items
-        setMeds(prev => {
-          const existingNames = new Set(prev.map(p => p.name.toLowerCase()));
-          const novelItems = derivedMeds.filter(d => !existingNames.has(d.name.toLowerCase()));
-          return [...novelItems, ...prev];
-        });
+        setMeds(derivedMeds);
+      } else {
+        setMeds([]);
       }
     } catch (err) {
       console.error('Error fetching prescriptions:', err);
+      setPrescriptions([]);
+      setMeds([]);
     } finally {
       setPrescriptionsLoading(false);
     }
@@ -629,41 +607,48 @@ export const PatientDashboardPage: React.FC = () => {
             </div>
 
             <div className="divide-y divide-slate-100 pt-2">
-              {meds.map((m) => (
-                <div key={m.id} className="py-3 flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <button
-                      onClick={() => toggleMed(m.id)}
-                      className={`w-6 h-6 rounded-full flex items-center justify-center border transition-colors ${
-                        m.status === 'TAKEN'
-                          ? 'bg-emerald-600 border-emerald-600 text-white'
-                          : 'border-slate-300 text-transparent hover:border-slate-400'
-                      }`}
-                      title={m.status === 'TAKEN' ? 'Mark pending' : 'Mark taken'}
-                    >
-                      <CheckCircle2 className="w-4 h-4 fill-current" />
-                    </button>
-                    <div>
-                      <div className="flex items-center space-x-2">
-                        <p className={`text-xs font-bold ${m.status === 'TAKEN' ? 'line-through text-slate-400' : 'text-slate-900'}`}>
-                          {m.name}
-                        </p>
-                        {m.rxNumber && (
-                          <span className="text-[9px] font-semibold text-teal-700 bg-teal-50 px-1.5 py-0.2 rounded">
-                            {m.rxNumber}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-slate-500">{m.time} • {m.instruction}</p>
-                    </div>
-                  </div>
-                  <span className={`text-[11px] font-semibold px-2 py-0.5 rounded ${
-                    m.status === 'TAKEN' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
-                  }`}>
-                    {m.status}
-                  </span>
+              {meds.length === 0 ? (
+                <div className="py-6 text-center text-xs text-slate-500">
+                  <p className="font-semibold">No active medication schedules.</p>
+                  <p className="text-slate-400 mt-0.5">Medications from your verified digital prescriptions appear here automatically.</p>
                 </div>
-              ))}
+              ) : (
+                meds.map((m) => (
+                  <div key={m.id} className="py-3 flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <button
+                        onClick={() => toggleMed(m.id)}
+                        className={`w-6 h-6 rounded-full flex items-center justify-center border transition-colors ${
+                          m.status === 'TAKEN'
+                            ? 'bg-emerald-600 border-emerald-600 text-white'
+                            : 'border-slate-300 text-transparent hover:border-slate-400'
+                        }`}
+                        title={m.status === 'TAKEN' ? 'Mark pending' : 'Mark taken'}
+                      >
+                        <CheckCircle2 className="w-4 h-4 fill-current" />
+                      </button>
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <p className={`text-xs font-bold ${m.status === 'TAKEN' ? 'line-through text-slate-400' : 'text-slate-900'}`}>
+                            {m.name}
+                          </p>
+                          {m.rxNumber && (
+                            <span className="text-[9px] font-semibold text-teal-700 bg-teal-50 px-1.5 py-0.2 rounded">
+                              {m.rxNumber}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-500">{m.time} • {m.instruction}</p>
+                      </div>
+                    </div>
+                    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded ${
+                      m.status === 'TAKEN' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                    }`}>
+                      {m.status}
+                    </span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>

@@ -140,6 +140,32 @@ export const getMyAppointments = async (req: AuthRequest, res: Response): Promis
       return;
     }
 
+    if (req.user.role === 'DOCTOR') {
+      let doctor = await Doctor.findOne({ userId: req.user.id });
+      if (!doctor && Types.ObjectId.isValid(req.user.id)) {
+        doctor = await Doctor.findById(req.user.id);
+      }
+      if (!doctor) {
+        res.json({
+          success: true,
+          data: [],
+          message: 'No doctor appointments found',
+        });
+        return;
+      }
+
+      const appointments = await Appointment.find({ doctorId: doctor._id })
+        .sort({ appointmentDate: 1, createdAt: -1 })
+        .limit(100);
+
+      res.json({
+        success: true,
+        data: appointments,
+        message: 'Doctor appointments retrieved successfully',
+      });
+      return;
+    }
+
     const patient = await Patient.findOne({ userId: req.user.id });
     if (!patient) {
       // If user has no patient profile, return empty list (prevents data leakage of all patients)
@@ -471,3 +497,67 @@ export const getDoctorSlots = async (req: AuthRequest, res: Response): Promise<v
     res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: 'Failed to fetch doctor slots' } });
   }
 };
+
+// Clinician-authenticated queue of today's appointments for Provider Portal
+export const getDoctorQueue = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user?.id) {
+      res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Authentication required' } });
+      return;
+    }
+
+    if (req.user.role !== 'DOCTOR' && req.user.role !== 'SUPER_ADMIN') {
+      res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'Only clinicians can access doctor queue' },
+      });
+      return;
+    }
+
+    let doctor = await Doctor.findOne({ userId: req.user.id });
+    if (!doctor && Types.ObjectId.isValid(req.user.id)) {
+      doctor = await Doctor.findById(req.user.id);
+    }
+
+    if (!doctor) {
+      res.status(404).json({
+        success: false,
+        error: { code: 'DOCTOR_NOT_FOUND', message: 'Practitioner profile not found' },
+      });
+      return;
+    }
+
+    const todayNormalized = normalizeToUtcDate(new Date());
+
+    const appointments = await Appointment.find({
+      doctorId: doctor._id,
+      appointmentDate: todayNormalized,
+      status: { $in: ['CONFIRMED', 'CHECKED_IN', 'COMPLETED'] },
+    }).sort({ tokenNumber: 1, timeSlot: 1 });
+
+    const queue = appointments.map((appt) => ({
+      appointmentId: appt._id,
+      token: appt.tokenNumber,
+      name: appt.patientName,
+      patientId: appt.patientId,
+      time: appt.timeSlot,
+      status: appt.status,
+      type: appt.mode === 'VIDEO' ? 'Telehealth Video' : 'In-Clinic OPD',
+      symptoms: appt.symptoms,
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        doctorName: doctor.fullName,
+        specialty: doctor.specialties.join(', '),
+        totalQueue: queue.length,
+        queue,
+      },
+      message: 'Doctor OPD queue retrieved successfully',
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: 'Failed to fetch doctor queue' } });
+  }
+};
+

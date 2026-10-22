@@ -82,11 +82,11 @@ export const HomePage: React.FC = () => {
   };
 
   const specialties = [
-    { name: 'Cardiologist', icon: HeartPulse, count: '14 Specialists' },
-    { name: 'Dermatologist', icon: Activity, count: '22 Specialists' },
-    { name: 'Pediatrician', icon: Stethoscope, count: '18 Specialists' },
-    { name: 'Orthopedic Surgeon', icon: Award, count: '12 Specialists' },
-    { name: 'General Physician', icon: CheckCircle2, count: '35 Specialists' },
+    { name: 'Cardiologist', icon: HeartPulse, category: 'Heart & Cardiovascular' },
+    { name: 'Dermatologist', icon: Activity, category: 'Skin & Hair Health' },
+    { name: 'Pediatrician', icon: Stethoscope, category: 'Child & Newborn Care' },
+    { name: 'Orthopedic Surgeon', icon: Award, category: 'Bones & Joint Care' },
+    { name: 'General Physician', icon: CheckCircle2, category: 'Internal Medicine & Wellness' },
   ];
 
   return (
@@ -339,7 +339,7 @@ export const HomePage: React.FC = () => {
                   <h3 className="text-sm font-bold text-slate-900 group-hover:text-medical-700 transition-colors">
                     {spec.name}
                   </h3>
-                  <p className="text-[11px] text-slate-400 mt-1">{spec.count}</p>
+                  <p className="text-[11px] text-slate-400 mt-1">{spec.category}</p>
                 </Link>
               </TiltCard>
             );

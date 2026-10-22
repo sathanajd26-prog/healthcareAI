@@ -317,41 +317,34 @@ export const DoctorDetailPage: React.FC = () => {
                     {slotsLoading && <span className="text-[10px] text-medical-600 font-semibold animate-pulse">Checking availability...</span>}
                   </div>
                   <div className="grid grid-cols-3 gap-2">
-                    {(slots.length > 0
-                      ? slots
-                      : [
-                          { time: '09:00 AM', available: true },
-                          { time: '09:30 AM', available: true },
-                          { time: '10:00 AM', available: true },
-                          { time: '10:30 AM', available: true },
-                          { time: '04:00 PM', available: true },
-                          { time: '04:30 PM', available: true },
-                          { time: '05:00 PM', available: true },
-                          { time: '05:30 PM', available: true },
-                          { time: '06:00 PM', available: true },
-                        ]
-                    ).map((slot) => {
-                      const isSelected = selectedSlot === slot.time;
-                      const isAvailable = slot.available;
-                      return (
-                        <button
-                          key={slot.time}
-                          type="button"
-                          disabled={!isAvailable}
-                          onClick={() => setSelectedSlot(slot.time)}
-                          className={`py-2 px-1 text-xs font-semibold rounded-lg border text-center transition-all ${
-                            !isAvailable
-                              ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed line-through'
-                              : isSelected
-                              ? 'bg-medical-600 border-medical-600 text-white shadow-xs'
-                              : 'border-slate-200 text-slate-700 hover:border-medical-500 bg-white'
-                          }`}
-                        >
-                          <span>{slot.time}</span>
-                          {!isAvailable && <span className="block text-[9px] no-underline font-normal text-rose-500">Booked</span>}
-                        </button>
-                      );
-                    })}
+                    {slots.length === 0 && !slotsLoading ? (
+                      <div className="col-span-3 py-4 text-center text-xs text-slate-500 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                        No available slots for this date.
+                      </div>
+                    ) : (
+                      slots.map((slot) => {
+                        const isSelected = selectedSlot === slot.time;
+                        const isAvailable = slot.available;
+                        return (
+                          <button
+                            key={slot.time}
+                            type="button"
+                            disabled={!isAvailable}
+                            onClick={() => setSelectedSlot(slot.time)}
+                            className={`py-2 px-1 text-xs font-semibold rounded-lg border text-center transition-all ${
+                              !isAvailable
+                                ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed line-through'
+                                : isSelected
+                                ? 'bg-medical-600 border-medical-600 text-white shadow-xs'
+                                : 'border-slate-200 text-slate-700 hover:border-medical-500 bg-white'
+                            }`}
+                          >
+                            <span>{slot.time}</span>
+                            {!isAvailable && <span className="block text-[9px] no-underline font-normal text-rose-500">Booked</span>}
+                          </button>
+                        );
+                      })
+                    )}
                   </div>
                 </div>
 

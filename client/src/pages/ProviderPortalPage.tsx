@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Stethoscope, 
   Users, 
@@ -16,19 +16,63 @@ import {
 } from 'lucide-react';
 import { PageNavigation } from '../components/PageNavigation';
 import { api } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 
 export const ProviderPortalPage: React.FC = () => {
+  const { user } = useAuth();
   const { t } = useLanguage();
 
-  // Doctor OPD Queue Simulation
-  const [currentToken, setCurrentToken] = useState(2);
-  const [queue, setQueue] = useState([
-    { token: 1, name: 'Ramesh Verma', time: '04:00 PM', status: 'COMPLETED', type: 'Follow-up' },
-    { token: 2, name: 'John Doe', time: '04:30 PM', status: 'IN_CONSULTATION', type: 'Telehealth Video' },
-    { token: 3, name: 'Priya Sundaram', time: '05:00 PM', status: 'WAITING', type: 'In-Clinic OPD' },
-    { token: 4, name: 'Anil Kapoor', time: '05:30 PM', status: 'WAITING', type: 'In-Clinic OPD' },
-  ]);
+  // Doctor OPD Queue State
+  const [queueLoading, setQueueLoading] = useState(true);
+  const [doctorInfo, setDoctorInfo] = useState<{ doctorName: string; specialty: string }>({
+    doctorName: user?.fullName || 'Attending Physician',
+    specialty: 'Clinical Medicine',
+  });
+  const [currentToken, setCurrentToken] = useState(1);
+  const [queue, setQueue] = useState<Array<{
+    appointmentId?: string;
+    token: number;
+    name: string;
+    patientId?: string;
+    time: string;
+    status: string;
+    type: string;
+    symptoms?: string[];
+  }>>([]);
+
+  // Fetch real authenticated doctor OPD queue from backend
+  const fetchQueue = async () => {
+    setQueueLoading(true);
+    try {
+      const res = await api.getDoctorQueue();
+      if (res.success && res.data) {
+        setDoctorInfo({
+          doctorName: res.data.doctorName || user?.fullName || 'Attending Physician',
+          specialty: res.data.specialty || 'Clinical Practice',
+        });
+        if (Array.isArray(res.data.queue) && res.data.queue.length > 0) {
+          setQueue(res.data.queue);
+          const firstIncomplete = res.data.queue.find((q: any) => q.status !== 'COMPLETED');
+          if (firstIncomplete) {
+            setCurrentToken(firstIncomplete.token);
+          } else {
+            setCurrentToken(res.data.queue[0].token);
+          }
+        } else {
+          setQueue([]);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load doctor queue:', err);
+    } finally {
+      setQueueLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchQueue();
+  }, [user]);
 
   // Digital Rx Form State
   const [medName, setMedName] = useState('');
@@ -39,9 +83,10 @@ export const ProviderPortalPage: React.FC = () => {
     { name: 'Telmisartan Tablets', dosage: '20mg', freq: 'OD (After breakfast)' },
   ]);
   const [rxSaved, setRxSaved] = useState(false);
-  const [rxNumberGenerated, setRxNumberGenerated] = useState<string>('RX-2026-9921');
+  const [rxNumberGenerated, setRxNumberGenerated] = useState<string>('RX-NEW');
   const [submittingRx, setSubmittingRx] = useState(false);
   const [rxSuccessMsg, setRxSuccessMsg] = useState<string | null>(null);
+  const [rxErrorMsg, setRxErrorMsg] = useState<string | null>(null);
 
   // AI Clinic Assistant Natural Language Query
   const [clinicQuery, setClinicQuery] = useState('Show diabetic patients overdue for follow-up');
@@ -55,6 +100,7 @@ export const ProviderPortalPage: React.FC = () => {
     setMedName('');
     setRxSaved(false);
     setRxSuccessMsg(null);
+    setRxErrorMsg(null);
   };
 
   const removeMedication = (idx: number) => {
@@ -65,13 +111,18 @@ export const ProviderPortalPage: React.FC = () => {
 
   const handleSignAndTransmit = async () => {
     if (rxList.length === 0) return;
+    const activePatient = queue.find(q => q.token === currentToken);
+    if (!activePatient) {
+      setRxErrorMsg('Please select an active patient from today\'s OPD queue to issue a prescription.');
+      return;
+    }
+
     setSubmittingRx(true);
     setRxSuccessMsg(null);
+    setRxErrorMsg(null);
+
     try {
-      const activePatient = queue.find(q => q.token === currentToken) || { name: 'John Doe' };
-      const generatedNum = `RX-${Date.now().toString().slice(-6)}`;
-      
-      const payload = {
+      const payload: any = {
         patientName: activePatient.name,
         medications: rxList.map(m => ({
           name: m.name,
@@ -83,39 +134,31 @@ export const ProviderPortalPage: React.FC = () => {
         advice: 'Take medications on time with water. Follow low-sodium diet and hydrate well.'
       };
 
-      const res = await api.createPrescription(payload);
-      const newRx = res?.data || {
-        _id: 'rx_' + Date.now(),
-        prescriptionNumber: generatedNum,
-        patientName: activePatient.name,
-        doctorName: 'Dr. Ananya Deshmukh',
-        doctorSpecialty: 'Cardiology & Internal Medicine',
-        createdAt: new Date().toISOString(),
-        medications: payload.medications,
-        advice: payload.advice
-      };
-
-      const finalRxNum = newRx.prescriptionNumber || generatedNum;
-      setRxNumberGenerated(finalRxNum);
-      setRxSaved(true);
-      setRxSuccessMsg(`Prescription #${finalRxNum} signed and transmitted to ${activePatient.name}'s Patient Dashboard!`);
-
-      // Store in localStorage for immediate cross-tab synchronization
-      try {
-        const stored = JSON.parse(localStorage.getItem('aegis_prescriptions') || '[]');
-        localStorage.setItem('aegis_prescriptions', JSON.stringify([newRx, ...stored]));
-      } catch (err) {
-        console.error('Storage sync error:', err);
+      if (activePatient.patientId) {
+        payload.patientId = activePatient.patientId;
+      }
+      if (activePatient.appointmentId) {
+        payload.appointmentId = activePatient.appointmentId;
       }
 
-      // Fire cross-component broadcast
-      window.dispatchEvent(new CustomEvent('aegis_prescription_transmitted', {
-        detail: newRx
-      }));
+      const res = await api.createPrescription(payload);
+      if (res.success && res.data) {
+        const newRx = res.data;
+        const finalRxNum = newRx.prescriptionNumber;
+        setRxNumberGenerated(finalRxNum);
+        setRxSaved(true);
+        setRxSuccessMsg(`Prescription #${finalRxNum} signed and transmitted to ${activePatient.name}'s Patient Dashboard!`);
+
+        // Fire cross-component broadcast for immediate UI responsiveness
+        window.dispatchEvent(new CustomEvent('aegis_prescription_transmitted', {
+          detail: newRx
+        }));
+      } else {
+        setRxErrorMsg(res.error?.message || 'Failed to issue prescription.');
+      }
     } catch (err: any) {
       console.error('Error creating prescription:', err);
-      setRxSaved(true);
-      setRxSuccessMsg(`Prescription transmitted locally to Patient Dashboard.`);
+      setRxErrorMsg(err.message || 'Network error occurred while signing prescription.');
     } finally {
       setSubmittingRx(false);
     }
@@ -164,22 +207,24 @@ export const ProviderPortalPage: React.FC = () => {
       <div className="bg-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <span className="text-xs font-bold text-teal-400 uppercase tracking-wider">Clinical OS Workbench</span>
-          <h1 className="text-2xl font-bold mt-1">Dr. Ananya Deshmukh, MD Cardiology</h1>
+          <h1 className="text-2xl font-bold mt-1">{doctorInfo.doctorName}</h1>
           <p className="text-xs text-slate-400 mt-1">
-            Manipal Heart Institute • OPD Room #14 • Digital Prescription & AI Assistance Desk
+            {doctorInfo.specialty} • OPD Clinical Consultations & Digital Prescription Desk
           </p>
         </div>
 
         <div className="flex items-center space-x-3">
           <div className="bg-teal-950/80 border border-teal-800 text-teal-300 px-4 py-2 rounded-2xl text-xs font-bold">
-            Live OPD Queue: Token #{currentToken} of {queue.length}
+            Live OPD Queue: {queue.length > 0 ? `Token #${currentToken} of ${queue.length}` : '0 Patients Today'}
           </div>
-          <button
-            onClick={nextPatient}
-            className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold transition-colors shadow-xs"
-          >
-            Call Next Patient →
-          </button>
+          {queue.length > 0 && (
+            <button
+              onClick={nextPatient}
+              className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold transition-colors shadow-xs"
+            >
+              Call Next Patient →
+            </button>
+          )}
         </div>
       </div>
 
@@ -191,31 +236,37 @@ export const ProviderPortalPage: React.FC = () => {
             <div className="flex items-center justify-between pb-4 border-b border-slate-100">
               <div className="flex items-center space-x-2">
                 <Users className="w-5 h-5 text-medical-700" />
-                <h2 className="text-base font-bold text-slate-900">Current Consultation — John Doe (Token #{currentToken})</h2>
+                <h2 className="text-base font-bold text-slate-900">
+                  {queue.length > 0
+                    ? `Current Consultation — ${queue.find(q => q.token === currentToken)?.name || 'Consultation In Progress'} (Token #${currentToken})`
+                    : 'No Consultations Scheduled Today'}
+                </h2>
               </div>
               <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
                 Consent Granted
               </span>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 py-4 text-xs">
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                <p className="text-slate-400">Age / Gender</p>
-                <p className="font-bold text-slate-900 mt-0.5">32 Y / Male</p>
+            {queue.length > 0 ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 py-4 text-xs">
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <p className="text-slate-400">Patient Name</p>
+                  <p className="font-bold text-slate-900 mt-0.5">{queue.find(q => q.token === currentToken)?.name || 'Patient'}</p>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <p className="text-slate-400">Consultation Slot</p>
+                  <p className="font-bold text-slate-900 mt-0.5">{queue.find(q => q.token === currentToken)?.time || 'Scheduled'}</p>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <p className="text-slate-400">Encounter Type</p>
+                  <p className="font-bold text-slate-900 mt-0.5">{queue.find(q => q.token === currentToken)?.type || 'OPD'}</p>
+                </div>
               </div>
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                <p className="text-slate-400">Vitals Recorded</p>
-                <p className="font-bold text-slate-900 mt-0.5">124/82 mmHg</p>
+            ) : (
+              <div className="py-6 text-center text-xs text-slate-500">
+                You have no active appointments booked for today.
               </div>
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                <p className="text-slate-400">Fasting Glucose</p>
-                <p className="font-bold text-amber-700 mt-0.5">112 mg/dL</p>
-              </div>
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                <p className="text-slate-400">Allergies</p>
-                <p className="font-bold text-rose-700 mt-0.5">Penicillin</p>
-              </div>
-            </div>
+            )}
           </div>
 
           {/* Digital Prescription Composer (Section 14) */}
@@ -241,6 +292,14 @@ export const ProviderPortalPage: React.FC = () => {
               <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-900 rounded-xl text-xs flex items-center space-x-2 font-medium animate-fadeIn">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
                 <span>{rxSuccessMsg}</span>
+              </div>
+            )}
+
+            {/* Live Error Banner */}
+            {rxErrorMsg && (
+              <div className="p-3 bg-rose-50 border border-rose-300 text-rose-900 rounded-xl text-xs flex items-center space-x-2 font-medium animate-fadeIn">
+                <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                <span>{rxErrorMsg}</span>
               </div>
             )}
 
@@ -338,32 +397,41 @@ export const ProviderPortalPage: React.FC = () => {
           {/* OPD Token Queue Status */}
           <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm space-y-3">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Today's OPD Queue</h3>
-            <div className="space-y-2">
-              {queue.map((q) => (
-                <div
-                  key={q.token}
-                  className={`p-3 rounded-xl border text-xs flex items-center justify-between ${
-                    q.token === currentToken
-                      ? 'bg-teal-50 border-teal-300 font-bold'
-                      : 'bg-white border-slate-200 text-slate-700'
-                  }`}
-                >
-                  <div>
-                    <p className="text-slate-900">Token #{q.token}: {q.name}</p>
-                    <p className="text-[10px] text-slate-400 font-normal">{q.time} • {q.type}</p>
+            {queueLoading ? (
+              <div className="py-8 text-center text-xs text-slate-400">Loading today's schedule...</div>
+            ) : queue.length === 0 ? (
+              <div className="py-6 text-center text-xs text-slate-500 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                No patients scheduled in today's OPD queue.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {queue.map((q) => (
+                  <div
+                    key={q.token}
+                    onClick={() => setCurrentToken(q.token)}
+                    className={`p-3 rounded-xl border text-xs flex items-center justify-between cursor-pointer transition-colors ${
+                      q.token === currentToken
+                        ? 'bg-teal-50 border-teal-300 font-bold'
+                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div>
+                      <p className="text-slate-900">Token #{q.token}: {q.name}</p>
+                      <p className="text-[10px] text-slate-400 font-normal">{q.time} • {q.type}</p>
+                    </div>
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
+                      q.status === 'IN_CONSULTATION'
+                        ? 'bg-teal-600 text-white'
+                        : q.status === 'COMPLETED'
+                        ? 'bg-slate-100 text-slate-400'
+                        : 'bg-amber-100 text-amber-800'
+                    }`}>
+                      {q.status}
+                    </span>
                   </div>
-                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
-                    q.status === 'IN_CONSULTATION'
-                      ? 'bg-teal-600 text-white'
-                      : q.status === 'COMPLETED'
-                      ? 'bg-slate-100 text-slate-400'
-                      : 'bg-amber-100 text-amber-800'
-                  }`}>
-                    {q.status}
-                  </span>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* AI Clinic Assistant (Section 27) */}

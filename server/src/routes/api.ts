@@ -7,7 +7,8 @@ import {
   getQueueStatus,
   cancelAppointment,
   rescheduleAppointment,
-  getDoctorSlots
+  getDoctorSlots,
+  getDoctorQueue
 } from '../modules/appointments/appointmentController';
 import { 
   bookAppointmentSchema, 
@@ -99,6 +100,7 @@ router.get('/appointments/my', authenticate, getMyAppointments);
 router.patch('/appointments/:id/cancel', authenticate, validateBody(cancelAppointmentSchema), cancelAppointment);
 router.patch('/appointments/:id/reschedule', authenticate, validateBody(rescheduleAppointmentSchema), rescheduleAppointment);
 router.get('/appointments/queue/:id', authenticate, getQueueStatus);
+router.get('/appointments/doctor-queue', authenticate, requireRole('DOCTOR', 'SUPER_ADMIN'), getDoctorQueue);
 
 // Medical Records & Timeline Endpoints
 router.get('/records/timeline', authenticate, getHealthTimeline);

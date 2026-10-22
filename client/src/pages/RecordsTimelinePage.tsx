@@ -38,50 +38,14 @@ export const RecordsTimelinePage: React.FC = () => {
     setLoading(true);
     try {
       const res = await api.getTimeline();
-      if (res.success && res.data.records.length > 0) {
+      if (res.success && Array.isArray(res.data?.records)) {
         setRecords(res.data.records);
       } else {
-        // Sample longitudinal timeline events
-        setRecords([
-          {
-            _id: 'rec-1',
-            title: 'Cardiology Follow-Up Consultation',
-            encounterType: 'CONSULTATION',
-            encounterDate: '2026-10-10T10:00:00Z',
-            doctorName: 'Dr. Ananya Deshmukh',
-            category: 'Cardiovascular Evaluation',
-            summary: 'Evaluated resting palpitations. Normal S1/S2 heart sounds, ECG sinus rhythm. Advised continued aerobic walking 30 min daily.',
-            vitals: { systolicBP: 124, diastolicBP: 82, heartRate: 72, spO2: 98 },
-            aiInsights: 'Blood pressure shows stable control within Stage-1 pre-hypertensive threshold.',
-          },
-          {
-            _id: 'rec-2',
-            title: 'Diagnostic Lipid & Glycemic Profile',
-            encounterType: 'LAB_REPORT',
-            encounterDate: '2026-10-06T08:30:00Z',
-            doctorName: 'Apollo Diagnostics LIS',
-            category: 'Pathology & Biochemistry',
-            summary: 'Automated biomarker accessioning. Fasting glucose and HbA1c panel analyzed.',
-            extractedBiomarkers: [
-              { name: 'HbA1c', value: '6.4', unit: '%', referenceRange: '< 5.7%', status: 'ELEVATED' },
-              { name: 'Fasting Blood Sugar', value: '112', unit: 'mg/dL', referenceRange: '70-99 mg/dL', status: 'ELEVATED' },
-              { name: 'Total Cholesterol', value: '178', unit: 'mg/dL', referenceRange: '< 200 mg/dL', status: 'NORMAL' },
-            ],
-            aiInsights: 'Positive downward trajectory: HbA1c improved from 6.8% in July to 6.4% in October.',
-          },
-          {
-            _id: 'rec-3',
-            title: 'Internal Medicine Review & Prescription',
-            encounterType: 'PRESCRIPTION',
-            encounterDate: '2026-09-15T14:15:00Z',
-            doctorName: 'Dr. Kabir Sen',
-            category: 'General Medicine',
-            summary: 'Prescribed Metformin 500mg OD and Telmisartan 20mg OD with dietary potassium guidelines.',
-          },
-        ]);
+        setRecords([]);
       }
     } catch (err) {
       console.error(err);
+      setRecords([]);
     } finally {
       setLoading(false);
     }
@@ -209,59 +173,78 @@ export const RecordsTimelinePage: React.FC = () => {
       </div>
 
       {/* Chronological Timeline */}
-      <div className="relative pl-6 sm:pl-8 border-l-2 border-teal-200/70 space-y-8">
-        {records.map((rec, idx) => (
-          <div key={rec._id || idx} className="relative group">
-            {/* Timeline bullet dot */}
-            <div className="absolute -left-[31px] sm:-left-[39px] top-1.5 w-5 h-5 rounded-full border-4 border-white bg-medical-600 shadow-sm" />
+      {loading ? (
+        <div className="py-16 text-center text-xs text-slate-400">Loading verified medical records...</div>
+      ) : records.length === 0 ? (
+        <div className="text-center py-12 px-4 bg-white rounded-2xl border border-dashed border-slate-200">
+          <FileText className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+          <p className="text-xs font-semibold text-slate-700">No medical records uploaded yet</p>
+          <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto">
+            Your longitudinal health timeline is empty. Upload clinical reports, pathology tests, or prescriptions above.
+          </p>
+          <button
+            onClick={() => setShowUploadModal(true)}
+            className="mt-4 px-4 py-2 bg-medical-700 hover:bg-medical-800 text-white rounded-xl text-xs font-bold transition-colors inline-flex items-center space-x-1.5"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span>Upload First Clinical Report</span>
+          </button>
+        </div>
+      ) : (
+        <div className="relative pl-6 sm:pl-8 border-l-2 border-teal-200/70 space-y-8">
+          {records.map((rec, idx) => (
+            <div key={rec._id || idx} className="relative group">
+              {/* Timeline bullet dot */}
+              <div className="absolute -left-[31px] sm:-left-[39px] top-1.5 w-5 h-5 rounded-full border-4 border-white bg-medical-600 shadow-sm" />
 
-            <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-xs hover:border-medical-300 transition-colors">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
-                <div>
-                  <div className="flex items-center space-x-2">
-                    <span className="text-xs font-bold text-medical-700 uppercase tracking-wider">{rec.encounterType}</span>
-                    <span className="text-slate-300">•</span>
-                    <span className="text-xs text-slate-500">{new Date(rec.encounterDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+              <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-xs hover:border-medical-300 transition-colors">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs font-bold text-medical-700 uppercase tracking-wider">{rec.encounterType}</span>
+                      <span className="text-slate-300">•</span>
+                      <span className="text-xs text-slate-500">{new Date(rec.encounterDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                    </div>
+                    <h3 className="text-base font-bold text-slate-900 mt-1">{rec.title}</h3>
                   </div>
-                  <h3 className="text-base font-bold text-slate-900 mt-1">{rec.title}</h3>
+
+                  <span className="text-xs text-slate-600 font-medium px-2.5 py-1 bg-slate-100 rounded-lg">
+                    {rec.doctorName}
+                  </span>
                 </div>
 
-                <span className="text-xs text-slate-600 font-medium px-2.5 py-1 bg-slate-100 rounded-lg">
-                  {rec.doctorName}
-                </span>
+                <p className="text-xs sm:text-sm text-slate-600 mt-3 leading-relaxed">
+                  {rec.summary}
+                </p>
+
+                {/* Biomarkers if present */}
+                {rec.extractedBiomarkers && rec.extractedBiomarkers.length > 0 && (
+                  <div className="mt-4 p-3.5 bg-slate-50 rounded-xl border border-slate-200">
+                    <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Extracted Biomarker Panel</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      {rec.extractedBiomarkers.map((b, bIdx) => (
+                        <div key={bIdx} className="bg-white p-2.5 rounded-lg border border-slate-200 text-xs">
+                          <p className="text-slate-500 font-medium">{b.name}</p>
+                          <p className="text-sm font-bold text-slate-900 mt-0.5">{b.value} <span className="text-[10px] text-slate-400 font-normal">{b.unit}</span></p>
+                          <p className="text-[10px] text-slate-400 mt-0.5">Ref: {b.referenceRange}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* AI Insights pill */}
+                {rec.aiInsights && (
+                  <div className="mt-4 flex items-center space-x-2 text-xs text-teal-900 bg-teal-50 border border-teal-200/80 px-3 py-2 rounded-xl">
+                    <Sparkles className="w-4 h-4 text-teal-600 flex-shrink-0" />
+                    <span><strong>AI Synthesis:</strong> {rec.aiInsights}</span>
+                  </div>
+                )}
               </div>
-
-              <p className="text-xs sm:text-sm text-slate-600 mt-3 leading-relaxed">
-                {rec.summary}
-              </p>
-
-              {/* Biomarkers if present */}
-              {rec.extractedBiomarkers && rec.extractedBiomarkers.length > 0 && (
-                <div className="mt-4 p-3.5 bg-slate-50 rounded-xl border border-slate-200">
-                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Extracted Biomarker Panel</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    {rec.extractedBiomarkers.map((b, bIdx) => (
-                      <div key={bIdx} className="bg-white p-2.5 rounded-lg border border-slate-200 text-xs">
-                        <p className="text-slate-500 font-medium">{b.name}</p>
-                        <p className="text-sm font-bold text-slate-900 mt-0.5">{b.value} <span className="text-[10px] text-slate-400 font-normal">{b.unit}</span></p>
-                        <p className="text-[10px] text-slate-400 mt-0.5">Ref: {b.referenceRange}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* AI Insights pill */}
-              {rec.aiInsights && (
-                <div className="mt-4 flex items-center space-x-2 text-xs text-teal-900 bg-teal-50 border border-teal-200/80 px-3 py-2 rounded-xl">
-                  <Sparkles className="w-4 h-4 text-teal-600 flex-shrink-0" />
-                  <span><strong>AI Synthesis:</strong> {rec.aiInsights}</span>
-                </div>
-              )}
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Upload & OCR Modal */}
       {showUploadModal && (
