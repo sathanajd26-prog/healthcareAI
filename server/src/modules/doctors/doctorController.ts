@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { Doctor } from '../../models/Doctor';
+import { Appointment } from '../../models/Appointment';
 
 // Search & list doctors with multi-faceted filtering
 export const getDoctors = async (req: Request, res: Response): Promise<void> => {
@@ -25,7 +26,14 @@ export const getDoctors = async (req: Request, res: Response): Promise<void> => 
     }
 
     if (maxFee) {
-      filter['pricing.videoFee'] = { $lte: Number(maxFee) };
+      const feeNum = Number(maxFee);
+      if (mode === 'IN_PERSON') {
+        filter['pricing.inPersonFee'] = { $lte: feeNum };
+      } else if (mode === 'HOME_VISIT') {
+        filter['pricing.homeVisitFee'] = { $lte: feeNum };
+      } else {
+        filter['pricing.videoFee'] = { $lte: feeNum };
+      }
     }
 
     if (minRating) {
@@ -34,11 +42,56 @@ export const getDoctors = async (req: Request, res: Response): Promise<void> => 
 
     const doctors = await Doctor.find(filter).sort({ ratingAverage: -1, experienceYears: -1 });
 
+    // Compute real availability for today aligned with the slots endpoint
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+
+    const standardSlots = [
+      '09:00 AM',
+      '09:30 AM',
+      '10:00 AM',
+      '10:30 AM',
+      '11:00 AM',
+      '11:30 AM',
+      '04:00 PM',
+      '04:30 PM',
+      '05:00 PM',
+      '05:30 PM',
+      '06:00 PM',
+      '06:30 PM',
+    ];
+
+    const doctorIds = doctors.map((d) => d._id);
+    const bookedToday = await Appointment.find({
+      doctorId: { $in: doctorIds },
+      appointmentDate: today,
+      status: { $in: ['CONFIRMED', 'CHECKED_IN'] },
+    }).select('doctorId timeSlot');
+
+    const bookedByDoctor: Record<string, Set<string>> = {};
+    for (const b of bookedToday) {
+      const docIdStr = b.doctorId.toString();
+      if (!bookedByDoctor[docIdStr]) bookedByDoctor[docIdStr] = new Set();
+      bookedByDoctor[docIdStr].add(b.timeSlot);
+    }
+
+    const doctorsWithComputedSlots = doctors.map((doc) => {
+      const docObj = doc.toObject();
+      const booked = bookedByDoctor[doc._id.toString()] || new Set();
+      const firstAvailableSlot = standardSlots.find((slot) => !booked.has(slot));
+      if (firstAvailableSlot) {
+        docObj.nextAvailableSlot = `Today, ${firstAvailableSlot}`;
+      } else {
+        docObj.nextAvailableSlot = 'No slots available today';
+      }
+      return docObj;
+    });
+
     res.json({
       success: true,
       data: {
-        total: doctors.length,
-        doctors,
+        total: doctorsWithComputedSlots.length,
+        doctors: doctorsWithComputedSlots,
       },
       message: 'Doctors retrieved successfully',
     });

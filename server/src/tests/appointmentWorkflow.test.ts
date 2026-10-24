@@ -1,8 +1,12 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 import { ensureTestServer, closeTestServer } from './testSetup';
+import { Doctor } from '../models/Doctor';
+import { Appointment } from '../models/Appointment';
+import { OtpRecord } from '../models/OtpRecord';
+import { User } from '../models/User';
 
-const API_BASE = process.env.API_BASE_URL || 'http://127.0.0.1:5001/api/v1';
+const API_BASE = process.env.API_BASE_URL || 'http://127.0.0.1:5002/api/v1';
 
 // Helper to make JSON requests
 async function apiRequest(endpoint: string, options: { method?: string; token?: string; body?: any } = {}) {
@@ -24,27 +28,44 @@ async function apiRequest(endpoint: string, options: { method?: string; token?: 
 }
 
 describe('AegisHealth Appointment Security & Concurrency Milestone Test Suite', () => {
-  before(async () => {
-    await ensureTestServer();
-  });
-
-  after(async () => {
-    await closeTestServer();
-  });
   let patientAToken: string;
   let patientBToken: string;
+  const patientAPhone = `98765432${Math.floor(10 + Math.random() * 40)}`;
+  const patientBPhone = `98765432${Math.floor(50 + Math.random() * 40)}`;
   let testDoctorId = '6ad20d8457d5731401876328'; // Dr. Ananya Deshmukh
-  let testDate = new Date(Date.now() + 1000 * 60 * 60 * 24 * (60 + Math.floor(Math.random() * 500))).toISOString().slice(0, 10);
+  let testDate = new Date(Date.now() + 1000 * 60 * 60 * 24 * (100 + Math.floor(Math.random() * 5000))).toISOString().slice(0, 10);
   let slotTime = '10:00 AM';
   let rescheduleSlotTime = '11:00 AM';
   let appointmentAId: string;
   let appointmentBId: string;
 
+  before(async () => {
+    await ensureTestServer();
+    const doc = await Doctor.findOne({ fullName: 'Dr. Ananya Deshmukh' });
+    if (doc) testDoctorId = doc._id.toString();
+    await Appointment.deleteMany({ doctorId: testDoctorId, appointmentDate: testDate });
+  });
+
+  after(async () => {
+    try {
+      await Appointment.deleteMany({ doctorId: testDoctorId, appointmentDate: testDate });
+      await OtpRecord.deleteMany({ phone: { $in: [patientAPhone, patientBPhone] } });
+      await User.deleteMany({ phone: { $in: [patientAPhone, patientBPhone] } });
+    } catch (e) {
+      // ignore
+    }
+    await closeTestServer();
+  });
+
   it('Setup: Authenticate Patient A and Patient B via OTP', async () => {
     // Authenticate Patient A (Primary demo patient)
+    await apiRequest('/auth/request-otp', {
+      method: 'POST',
+      body: { phone: patientAPhone },
+    });
     const resA = await apiRequest('/auth/verify-otp', {
       method: 'POST',
-      body: { phone: '9876543210', otp: '123456' },
+      body: { phone: patientAPhone, otp: '123456' },
     });
     assert.strictEqual(resA.status, 200, 'Patient A login should succeed');
     assert.ok(resA.data.data?.token, 'Patient A should receive JWT token');
@@ -52,9 +73,13 @@ describe('AegisHealth Appointment Security & Concurrency Milestone Test Suite', 
     patientAToken = resA.data.data.token;
 
     // Authenticate Patient B (Secondary test patient)
+    await apiRequest('/auth/request-otp', {
+      method: 'POST',
+      body: { phone: patientBPhone },
+    });
     const resB = await apiRequest('/auth/verify-otp', {
       method: 'POST',
-      body: { phone: '9876543299', otp: '123456' },
+      body: { phone: patientBPhone, otp: '123456' },
     });
     assert.strictEqual(resB.status, 200, 'Patient B login should succeed');
     assert.ok(resB.data.data?.token, 'Patient B should receive JWT token');
@@ -116,7 +141,7 @@ describe('AegisHealth Appointment Security & Concurrency Milestone Test Suite', 
         chiefComplaint: 'Automated milestone health checkup test',
       },
     });
-
+    if (res.status !== 201) console.error('DEBUG BOOKING FAILED:', JSON.stringify(res.data), 'for date:', testDate, 'doc:', testDoctorId);
     assert.strictEqual(res.status, 201, 'Booking should return 201 Created');
     assert.strictEqual(res.data.success, true);
     assert.ok(res.data.data?._id, 'Should return persisted appointment ID');

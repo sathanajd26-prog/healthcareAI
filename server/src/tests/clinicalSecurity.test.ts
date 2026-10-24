@@ -3,9 +3,13 @@ import assert from 'node:assert';
 import { io as ioClient, Socket } from 'socket.io-client';
 import { ensureTestServer, closeTestServer } from './testSetup';
 import { validateAndLoadConfig } from '../config/env';
+import { Appointment } from '../models/Appointment';
+import { Prescription } from '../models/Prescription';
+import { MedicalRecord } from '../models/MedicalRecord';
+import { OtpRecord } from '../models/OtpRecord';
 
-const API_BASE = process.env.API_BASE_URL || 'http://127.0.0.1:5001/api/v1';
-const WS_BASE = 'http://127.0.0.1:5001';
+const API_BASE = process.env.API_BASE_URL || 'http://127.0.0.1:5002/api/v1';
+const WS_BASE = process.env.WS_BASE_URL || 'http://127.0.0.1:5002';
 
 async function apiRequest(endpoint: string, options: { method?: string; token?: string; body?: any; headers?: Record<string, string> } = {}) {
   const headers: Record<string, string> = {
@@ -32,6 +36,18 @@ describe('Stage 3 Clinical Security, RBAC & Telehealth Milestone Test Suite', ()
   });
 
   after(async () => {
+    try {
+      if (testAppointmentId) {
+        await Appointment.deleteOne({ _id: testAppointmentId });
+      }
+      if (createdPrescriptionId) {
+        await Prescription.deleteOne({ _id: createdPrescriptionId });
+      }
+      await MedicalRecord.deleteMany({ title: 'Lipid Profile & HbA1c Lab Report' });
+      await OtpRecord.deleteMany({ phone: { $in: ['9876543210', '9876543299', '+919876543211'] } });
+    } catch (e) {
+      // ignore
+    }
     await closeTestServer();
   });
 

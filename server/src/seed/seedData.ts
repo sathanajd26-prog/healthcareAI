@@ -15,13 +15,7 @@ export const seedDatabase = async () => {
     }
     console.log('[Seed] Connected to MongoDB, seeding data...');
 
-    // Clear existing doctors & sample data
-    await Doctor.deleteMany({});
-    await Appointment.deleteMany({});
-    await MedicalRecord.deleteMany({});
-    await Prescription.deleteMany({});
-
-    // Create Doctor Users
+    // Upsert Doctor Users (Safe, idempotent seeding without blind wipes)
     const doctorUsers = [
       {
         fullName: 'Dr. Ananya Deshmukh',
@@ -95,7 +89,7 @@ export const seedDatabase = async () => {
         fullName: 'Dr. Shalini Swaminathan',
         phone: '+919811100003',
         title: 'Dr.',
-        avatarUrl: 'https://images.unsplash.com/photo-1594824813583-a798993f491c?w=500&auto=format&fit=crop&q=80',
+        avatarUrl: 'https://images.unsplash.com/photo-1651008376811-b90baee60c1f?w=500&auto=format&fit=crop&q=80',
         registrationNumber: 'MCI-40192-TN',
         registrationCouncil: 'Tamil Nadu Medical Council',
         experienceYears: 11,
@@ -193,21 +187,30 @@ export const seedDatabase = async () => {
     ];
 
     for (const d of doctorUsers) {
-      let user = await User.findOne({ phone: d.phone });
-      if (!user) {
-        user = await User.create({
-          phone: d.phone,
-          fullName: d.fullName,
-          role: 'DOCTOR',
-          isVerified: true,
-          permissions: ['doctor:read', 'doctor:write', 'prescription:create'],
-        });
-      }
+      const user = await User.findOneAndUpdate(
+        { phone: d.phone },
+        {
+          $set: {
+            phone: d.phone,
+            fullName: d.fullName,
+            role: 'DOCTOR',
+            isVerified: true,
+            permissions: ['doctor:read', 'doctor:write', 'prescription:create'],
+          },
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
 
-      await Doctor.create({
-        ...d,
-        userId: user._id,
-      });
+      await Doctor.findOneAndUpdate(
+        { registrationNumber: d.registrationNumber },
+        {
+          $set: {
+            ...d,
+            userId: user._id,
+          },
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
     }
 
     console.log('[Seed] Doctors seeded successfully!');

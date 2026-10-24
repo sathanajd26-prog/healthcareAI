@@ -6,8 +6,9 @@ import { User } from '../models/User';
 import { Doctor } from '../models/Doctor';
 import { Patient } from '../models/Patient';
 import { Appointment } from '../models/Appointment';
+import { MedicalRecord } from '../models/MedicalRecord';
 
-const API_BASE = process.env.API_BASE_URL || 'http://127.0.0.1:5001/api/v1';
+const API_BASE = process.env.API_BASE_URL || 'http://127.0.0.1:5002/api/v1';
 const JWT_SECRET = process.env.JWT_SECRET || 'aegishealth_jwt_secret_for_local_development_testing_only_min_32_chars';
 
 describe('Stage 4 End-to-End Real Frontend-Backend-Database Integration Workflows', () => {
@@ -15,12 +16,14 @@ describe('Stage 4 End-to-End Real Frontend-Backend-Database Integration Workflow
   let doctorToken: string;
   let testDoctor: any;
   let testPatient: any;
+  let pUser: any;
+  let dUser: any;
 
   before(async () => {
     await ensureTestServer();
 
     // Create synthetic patient user & patient profile
-    const pUser = await User.create({
+    pUser = await User.create({
       phone: `+919999${Math.floor(100000 + Math.random() * 900000)}`,
       fullName: 'Real Stage4 Patient',
       role: 'PATIENT',
@@ -49,7 +52,7 @@ describe('Stage 4 End-to-End Real Frontend-Backend-Database Integration Workflow
     );
 
     // Create synthetic doctor user & doctor profile
-    const dUser = await User.create({
+    dUser = await User.create({
       phone: `+919888${Math.floor(100000 + Math.random() * 900000)}`,
       fullName: 'Dr. Real Stage4 Specialist',
       role: 'DOCTOR',
@@ -83,10 +86,6 @@ describe('Stage 4 End-to-End Real Frontend-Backend-Database Integration Workflow
       JWT_SECRET,
       { expiresIn: '1h' }
     );
-  });
-
-  after(async () => {
-    await closeTestServer();
   });
 
   describe('1. Doctor Search, Multi-Filter & Public Profile Discovery', () => {
@@ -275,5 +274,27 @@ describe('Stage 4 End-to-End Real Frontend-Backend-Database Integration Workflow
       assert.strictEqual(foundRecord.extractedBiomarkers[0].name, 'HbA1c');
       assert.strictEqual(foundRecord.extractedBiomarkers[0].value, '6.2');
     });
+  });
+
+  after(async () => {
+    if (testDoctor?._id) {
+      await Doctor.deleteOne({ _id: testDoctor._id });
+    }
+    if (testPatient?._id) {
+      await Patient.deleteOne({ _id: testPatient._id });
+    }
+    if (pUser?._id) {
+      await User.deleteOne({ _id: pUser._id });
+    }
+    if (dUser?._id) {
+      await User.deleteOne({ _id: dUser._id });
+    }
+    await Appointment.deleteMany({
+      patientName: 'Real Stage4 Patient',
+    });
+    await MedicalRecord.deleteMany({
+      title: 'Comprehensive Lipid & Glycemic Panel',
+    });
+    await closeTestServer();
   });
 });

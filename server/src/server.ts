@@ -189,10 +189,12 @@ io.on('connection', (socket) => {
   });
 });
 
-export const startServer = async (): Promise<http.Server> => {
+export const startServer = async (port?: number): Promise<http.Server> => {
   if (server.listening) {
     return server;
   }
+
+  const listenPort = port || PORT;
 
   const connected = await connectDB();
 
@@ -212,15 +214,15 @@ export const startServer = async (): Promise<http.Server> => {
   }
 
   return new Promise((resolve) => {
-    server.listen(PORT, () => {
+    server.listen(listenPort, () => {
       console.log(`
 ======================================================
   HEALTHCARE SUPER-APP BACKEND SERVICE ONLINE
-  HTTP Gateway : http://localhost:${PORT}
-  Socket.IO    : ws://localhost:${PORT}
-  Health Check : http://localhost:${PORT}/api/v1/health
-  Readiness    : http://localhost:${PORT}/api/v1/ready
-  Liveness     : http://localhost:${PORT}/api/v1/live
+  HTTP Gateway : http://localhost:${listenPort}
+  Socket.IO    : ws://localhost:${listenPort}
+  Health Check : http://localhost:${listenPort}/api/v1/health
+  Readiness    : http://localhost:${listenPort}/api/v1/ready
+  Liveness     : http://localhost:${listenPort}/api/v1/live
 ======================================================
       `);
       resolve(server);

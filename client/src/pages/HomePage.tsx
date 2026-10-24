@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import { Doctor } from '../types';
+import { DoctorAvatar } from '../components/DoctorAvatar';
 import { MedicalHeroFallback } from '../components/3d/MedicalHeroFallback';
 import { TiltCard } from '../components/motion/TiltCard';
 import { LocationSelector, getSavedLocation } from '../components/LocationSelector';
@@ -47,8 +48,14 @@ export const HomePage: React.FC = () => {
     const fetchDoctors = async () => {
       try {
         const res = await api.getDoctors();
-        if (res.success) {
-          setDoctors(res.data.doctors.slice(0, 4));
+        if (res.success && Array.isArray(res.data?.doctors)) {
+          const seen = new Set<string>();
+          const uniqueDocs = res.data.doctors.filter((d: Doctor) => {
+            if (!d._id || seen.has(d._id)) return false;
+            seen.add(d._id);
+            return true;
+          });
+          setDoctors(uniqueDocs.slice(0, 4));
         }
       } catch (err) {
         console.error(err);
@@ -284,10 +291,18 @@ export const HomePage: React.FC = () => {
                       {aiResult.matchingDoctors.map((doc: any) => (
                         <div key={doc._id} className="bg-white p-3 rounded-lg border border-slate-200 flex items-center justify-between">
                           <div className="flex items-center space-x-2.5">
-                            <img src={doc.avatarUrl} alt={doc.fullName} className="w-10 h-10 rounded-full object-cover" />
+                            <DoctorAvatar
+                              src={doc.avatarUrl}
+                              alt={doc.fullName}
+                              className="w-10 h-10 rounded-full"
+                              iconClassName="w-5 h-5 text-medical-600"
+                            />
                             <div>
                               <p className="text-xs font-bold text-slate-900">{doc.fullName}</p>
-                              <p className="text-[11px] text-slate-500">{doc.experienceYears} Y Exp • ₹{doc.pricing.videoFee}</p>
+                              <p className="text-[11px] text-slate-500">
+                                {doc.experienceYears != null ? `${doc.experienceYears} Y Exp` : 'Verified'}
+                                {doc.pricing?.videoFee != null ? ` • ₹${doc.pricing.videoFee}` : ''}
+                              </p>
                             </div>
                           </div>
                           <Link
@@ -363,25 +378,38 @@ export const HomePage: React.FC = () => {
                 <div className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden glass-card-hover flex flex-col justify-between h-full">
                   <div className="p-5">
                     <div className="flex items-start space-x-3 mb-4">
-                      <img src={doc.avatarUrl} alt={doc.fullName} className="w-16 h-16 rounded-xl object-cover border border-slate-100 flex-shrink-0" />
+                      <DoctorAvatar
+                        src={doc.avatarUrl}
+                        alt={doc.fullName}
+                        className="w-16 h-16 rounded-xl"
+                        iconClassName="w-7 h-7 text-medical-600"
+                      />
                       <div>
                         <div className="flex items-center space-x-1">
                           <h3 className="text-sm font-bold text-slate-900">{doc.fullName}</h3>
                           <span title="Verified License"><ShieldCheck className="w-4 h-4 text-medical-600" /></span>
                         </div>
-                        <p className="text-xs text-medical-700 font-medium">{doc.specialties.join(', ')}</p>
-                        <p className="text-[11px] text-slate-400 mt-0.5">{doc.experienceYears} Years Experience</p>
+                        <p className="text-xs text-medical-700 font-medium">
+                          {doc.specialties && doc.specialties.length > 0 ? doc.specialties.join(', ') : 'Specialist'}
+                        </p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          {doc.experienceYears != null ? `${doc.experienceYears} Years Experience` : 'Experience on file'}
+                        </p>
                       </div>
                     </div>
 
                     <div className="space-y-1.5 text-xs text-slate-600 pb-3 border-b border-slate-100">
                       <p className="flex items-center text-slate-500 truncate">
                         <MapPin className="w-3.5 h-3.5 mr-1 text-slate-400 flex-shrink-0" />
-                        <span>{doc.clinicAffiliations[0]?.clinicName || 'Apollo Hospital'}</span>
+                        <span>
+                          {doc.clinicAffiliations && doc.clinicAffiliations.length > 0 && doc.clinicAffiliations[0]?.clinicName
+                            ? doc.clinicAffiliations[0].clinicName
+                            : 'Clinic details on file'}
+                        </span>
                       </p>
                       <p className="flex items-center text-emerald-700 font-semibold">
                         <Clock className="w-3.5 h-3.5 mr-1 flex-shrink-0" />
-                        <span>{doc.nextAvailableSlot}</span>
+                        <span>{doc.nextAvailableSlot || 'Check availability'}</span>
                       </p>
                     </div>
 

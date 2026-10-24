@@ -81,7 +81,7 @@ const doctorSchema = new Schema<IDoctor>(
     ratingCount: { type: Number, default: 124 },
     slotDurationMinutes: { type: Number, default: 15 },
     availableDays: [{ type: String, default: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] }],
-    nextAvailableSlot: { type: String, default: 'Today, 04:30 PM' },
+    nextAvailableSlot: { type: String },
   },
   { timestamps: true }
 );

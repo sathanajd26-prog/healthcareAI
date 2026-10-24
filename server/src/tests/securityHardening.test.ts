@@ -2,8 +2,11 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 import { validateAndLoadConfig } from '../config/env';
 import { ensureTestServer, closeTestServer } from './testSetup';
+import { OtpRecord } from '../models/OtpRecord';
+import { User } from '../models/User';
 
-const API_BASE = process.env.API_BASE_URL || 'http://127.0.0.1:5001/api/v1';
+const API_BASE = process.env.API_BASE_URL || 'http://127.0.0.1:5002/api/v1';
+const createdTestPhones: string[] = [];
 
 async function apiRequest(endpoint: string, options: { method?: string; token?: string; body?: any; headers?: Record<string, string> } = {}) {
   const headers: Record<string, string> = {
@@ -30,6 +33,14 @@ describe('AegisHealth Milestone 2: Security Hardening & Runtime Verification Tes
   });
 
   after(async () => {
+    try {
+      if (createdTestPhones.length > 0) {
+        await OtpRecord.deleteMany({ phone: { $in: createdTestPhones } });
+        await User.deleteMany({ phone: { $in: createdTestPhones } });
+      }
+    } catch (e) {
+      // ignore
+    }
     await closeTestServer();
   });
 
@@ -114,6 +125,7 @@ describe('AegisHealth Milestone 2: Security Hardening & Runtime Verification Tes
 
   describe('2. OTP Lifecycle: Cooldowns, Attempt Limits, Expiration & Single-Use', () => {
     const testPhone = `+9199${Math.floor(10000000 + Math.random() * 90000000)}`;
+    createdTestPhones.push(testPhone);
 
     it('Request OTP succeeds and does not expose OTP plaintext in response', async () => {
       const res = await apiRequest('/auth/request-otp', {
@@ -175,6 +187,7 @@ describe('AegisHealth Milestone 2: Security Hardening & Runtime Verification Tes
 
     it('Single-use burning: once verified, an OTP cannot be reused', async () => {
       const burnPhone = `+9198${Math.floor(10000000 + Math.random() * 90000000)}`;
+      createdTestPhones.push(burnPhone);
 
       // Request OTP
       const reqRes = await apiRequest('/auth/request-otp', {
@@ -185,6 +198,7 @@ describe('AegisHealth Milestone 2: Security Hardening & Runtime Verification Tes
 
       // In dev mode, demo phone starting with 98765432 or predefined account receives 123456
       const demoBurnPhone = `98765432${Math.floor(10 + Math.random() * 89)}`;
+      createdTestPhones.push(demoBurnPhone);
       await apiRequest('/auth/request-otp', {
         method: 'POST',
         body: { phone: demoBurnPhone },
@@ -208,8 +222,15 @@ describe('AegisHealth Milestone 2: Security Hardening & Runtime Verification Tes
 
   describe('3. Session Logout & Security Headers', () => {
     it('POST /auth/logout invalidates session cleanly with 200 OK', async () => {
-      // Authenticate to get valid token
-      const authPhone = '9876543210';
+      // Authenticate to get valid token using dedicated test phone
+      const authPhone = `98765432${Math.floor(10 + Math.random() * 89)}`;
+      createdTestPhones.push(authPhone);
+
+      await apiRequest('/auth/request-otp', {
+        method: 'POST',
+        body: { phone: authPhone },
+      });
+
       const loginRes = await apiRequest('/auth/verify-otp', {
         method: 'POST',
         body: { phone: authPhone, otp: '123456' },
@@ -233,9 +254,11 @@ describe('AegisHealth Milestone 2: Security Hardening & Runtime Verification Tes
     });
 
     it('Rate limiter headers are present on authentication endpoints', async () => {
+      const ratePhone = `+91912${Math.floor(1000000 + Math.random() * 9000000)}`;
+      createdTestPhones.push(ratePhone);
       const res = await apiRequest('/auth/request-otp', {
         method: 'POST',
-        body: { phone: '+919123456789' },
+        body: { phone: ratePhone },
       });
       // Rate limiter standard headers
       assert.ok(res.headers.has('ratelimit-limit') || res.headers.has('x-ratelimit-limit'), 'Should include rate limit headers');

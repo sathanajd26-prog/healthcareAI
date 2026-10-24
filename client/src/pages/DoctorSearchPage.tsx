@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import { PageNavigation } from '../components/PageNavigation';
+import { DoctorAvatar } from '../components/DoctorAvatar';
 import { Doctor } from '../types';
 
 export const DoctorSearchPage: React.FC = () => {
@@ -45,8 +46,15 @@ export const DoctorSearchPage: React.FC = () => {
       if (minRating) params.minRating = String(minRating);
 
       const res = await api.getDoctors(params);
-      if (res.success) {
-        setDoctors(res.data.doctors);
+      if (res.success && Array.isArray(res.data?.doctors)) {
+        // Enforce uniqueness by stable MongoDB document _id (never by doctor name)
+        const seenDocIds = new Set<string>();
+        const uniqueDoctors = res.data.doctors.filter((d: Doctor) => {
+          if (!d._id || seenDocIds.has(d._id)) return false;
+          seenDocIds.add(d._id);
+          return true;
+        });
+        setDoctors(uniqueDoctors);
       }
     } catch (err) {
       console.error(err);
@@ -246,10 +254,11 @@ export const DoctorSearchPage: React.FC = () => {
               >
                 {/* Doctor Avatar & Details */}
                 <div className="flex items-start space-x-4">
-                  <img
+                  <DoctorAvatar
                     src={doc.avatarUrl}
                     alt={doc.fullName}
-                    className="w-20 h-20 rounded-2xl object-cover border border-slate-200 flex-shrink-0"
+                    className="w-20 h-20 rounded-2xl"
+                    iconClassName="w-8 h-8 text-medical-600"
                   />
                   <div>
                     <div className="flex items-center space-x-1.5">
@@ -258,28 +267,48 @@ export const DoctorSearchPage: React.FC = () => {
                     </div>
 
                     <p className="text-xs font-semibold text-medical-700 mt-0.5">
-                      {doc.specialties.join(', ')}
+                      {doc.specialties && doc.specialties.length > 0 ? doc.specialties.join(', ') : 'General Clinical Practitioner'}
                     </p>
 
                     <p className="text-[11px] text-slate-500 mt-1">
-                      {doc.qualifications.map(q => q.degree).join(', ')} • {doc.experienceYears} Years Overall Experience
+                      {doc.qualifications && doc.qualifications.length > 0
+                        ? doc.qualifications.map(q => q.degree).join(', ')
+                        : 'Credentials on file'}
+                      {doc.experienceYears != null && doc.experienceYears > 0
+                        ? ` • ${doc.experienceYears} Years Overall Experience`
+                        : ''}
                     </p>
 
-                    <p className="flex items-center text-xs text-slate-500 mt-2">
-                      <MapPin className="w-3.5 h-3.5 mr-1 text-slate-400" />
-                      <span>{doc.clinicAffiliations[0]?.clinicName || 'Apollo Clinic'}, {doc.clinicAffiliations[0]?.city || 'Bangalore'}</span>
-                    </p>
+                    {doc.clinicAffiliations && doc.clinicAffiliations.length > 0 && doc.clinicAffiliations[0]?.clinicName ? (
+                      <p className="flex items-center text-xs text-slate-500 mt-2">
+                        <MapPin className="w-3.5 h-3.5 mr-1 text-slate-400 flex-shrink-0" />
+                        <span>
+                          {doc.clinicAffiliations[0].clinicName}
+                          {doc.clinicAffiliations[0].city ? `, ${doc.clinicAffiliations[0].city}` : ''}
+                        </span>
+                      </p>
+                    ) : (
+                      <p className="flex items-center text-xs text-slate-400 mt-2 italic">
+                        <MapPin className="w-3.5 h-3.5 mr-1 text-slate-300 flex-shrink-0" />
+                        <span>Clinic location details not listed</span>
+                      </p>
+                    )}
 
                     {/* Mode tags */}
                     <div className="flex items-center gap-2 mt-2">
-                      {doc.consultationModes.includes('VIDEO') && (
+                      {doc.consultationModes?.includes('VIDEO') && (
                         <span className="inline-flex items-center text-[10px] font-semibold bg-teal-50 text-teal-800 px-2 py-0.5 rounded border border-teal-200">
                           <Video className="w-3 h-3 mr-1 text-teal-600" /> Video Available
                         </span>
                       )}
-                      {doc.consultationModes.includes('IN_PERSON') && (
+                      {doc.consultationModes?.includes('IN_PERSON') && (
                         <span className="inline-flex items-center text-[10px] font-semibold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
                           In-Clinic
+                        </span>
+                      )}
+                      {doc.consultationModes?.includes('HOME_VISIT') && (
+                        <span className="inline-flex items-center text-[10px] font-semibold bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-100">
+                          Home Visit
                         </span>
                       )}
                     </div>
@@ -291,15 +320,32 @@ export const DoctorSearchPage: React.FC = () => {
                   <div className="text-left sm:text-right">
                     <div className="flex items-center sm:justify-end space-x-1 text-amber-500 text-xs font-bold">
                       <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                      <span>{doc.ratingAverage}</span>
-                      <span className="text-slate-400 font-normal">({doc.ratingCount} reviews)</span>
+                      <span>{doc.ratingAverage != null ? doc.ratingAverage.toFixed(1) : '4.8'}</span>
+                      <span className="text-slate-400 font-normal">
+                        {doc.ratingCount ? `(${doc.ratingCount} reviews)` : '(No reviews yet)'}
+                      </span>
                     </div>
                     <p className="text-xs text-slate-400 mt-1">Consultation Fee</p>
-                    <p className="text-lg font-bold text-slate-900">₹{doc.pricing.videoFee}</p>
-                    <p className="text-[11px] text-emerald-700 font-semibold flex items-center sm:justify-end mt-0.5">
-                      <Clock className="w-3 h-3 mr-1" />
-                      <span>{doc.nextAvailableSlot}</span>
+                    <p className="text-lg font-bold text-slate-900">
+                      {doc.pricing?.videoFee != null
+                        ? `₹${doc.pricing.videoFee}`
+                        : doc.pricing?.inPersonFee != null
+                        ? `₹${doc.pricing.inPersonFee}`
+                        : 'Contact Clinic'}
                     </p>
+                    {doc.nextAvailableSlot ? (
+                      <p className={`text-[11px] font-semibold flex items-center sm:justify-end mt-0.5 ${
+                        doc.nextAvailableSlot.includes('No slots') ? 'text-amber-600' : 'text-emerald-700'
+                      }`}>
+                        <Clock className="w-3 h-3 mr-1" />
+                        <span>{doc.nextAvailableSlot}</span>
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-slate-400 font-medium flex items-center sm:justify-end mt-0.5">
+                        <Clock className="w-3 h-3 mr-1" />
+                        <span>Check calendar for slots</span>
+                      </p>
+                    )}
                   </div>
 
                   <Link

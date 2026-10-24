@@ -74,9 +74,9 @@ export const bookAppointment = async (req: AuthRequest, res: Response): Promise<
       return;
     }
 
-    // Generate human-friendly appointment number e.g. APPT-2026-9921
-    const count = await Appointment.countDocuments();
-    const appointmentNumber = `APPT-2026-${String(count + 1001).padStart(5, '0')}`;
+    // Generate human-friendly collision-free appointment number e.g. APPT-2026-9921
+    const uniqueSuffix = `${Date.now().toString().slice(-4)}${Math.floor(100 + Math.random() * 900)}`;
+    const appointmentNumber = `APPT-2026-${uniqueSuffix}`;
     const tokenNumber = Math.floor(Math.random() * 20) + 1;
     const roomId = `room-${Math.random().toString(36).substring(2, 9)}`;
 

@@ -2,6 +2,10 @@ import http from 'http';
 import { server as mainServer, io, startServer } from '../server';
 import { connectDB, disconnectDB } from '../config/db';
 
+export const TEST_PORT = parseInt(process.env.PORT || process.env.TEST_PORT || '5002', 10);
+export const TEST_API_BASE = process.env.API_BASE_URL || `http://127.0.0.1:${TEST_PORT}/api/v1`;
+export const TEST_WS_BASE = process.env.WS_BASE_URL || `http://127.0.0.1:${TEST_PORT}`;
+
 export async function ensureTestServer(): Promise<void> {
   await connectDB();
 
@@ -9,9 +13,9 @@ export async function ensureTestServer(): Promise<void> {
     return;
   }
 
-  // Check if an external server is already running on port 5001
+  // Check if an isolated test server is already running on the dedicated test port
   const isExternalListening = await new Promise<boolean>((resolve) => {
-    const req = http.get('http://127.0.0.1:5001/api/v1/live', (res) => {
+    const req = http.get(`http://127.0.0.1:${TEST_PORT}/api/v1/live`, (res) => {
       resolve(true);
     });
     req.on('error', () => resolve(false));
@@ -21,7 +25,7 @@ export async function ensureTestServer(): Promise<void> {
     return;
   }
 
-  await startServer();
+  await startServer(TEST_PORT);
 }
 
 export async function closeTestServer(): Promise<void> {
