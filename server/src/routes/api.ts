@@ -1,24 +1,30 @@
 import { Router } from 'express';
 import { requestOTP, verifyOTP, getCurrentUser, logoutUser } from '../modules/auth/authController';
 import { getDoctors, getDoctorById, aiMatchDoctor } from '../modules/doctors/doctorController';
-import { 
-  bookAppointment, 
-  getMyAppointments, 
+import {
+  bookAppointment,
+  getMyAppointments,
   getQueueStatus,
   cancelAppointment,
   rescheduleAppointment,
   getDoctorSlots,
   getDoctorQueue
 } from '../modules/appointments/appointmentController';
-import { 
-  bookAppointmentSchema, 
-  cancelAppointmentSchema, 
-  rescheduleAppointmentSchema 
+import {
+  bookAppointmentSchema,
+  cancelAppointmentSchema,
+  rescheduleAppointmentSchema
 } from '../modules/appointments/appointmentSchemas';
 import { validateBody } from '../middleware/validation';
 import { getHealthTimeline, createMedicalRecord } from '../modules/records/recordController';
 import { createPrescription, getMyPrescriptions, getPrescriptionById } from '../modules/prescriptions/prescriptionController';
 import { queryHealthAssistant, generateSoapDraft, analyzeReportDocument } from '../modules/ai/aiController';
+import {
+  chatQuerySchema,
+  soapDraftSchema,
+  reportAnalysisSchema,
+  doctorMatchSchema
+} from '../modules/ai/aiSchemas';
 import { authenticate, requireRole } from '../middleware/auth';
 import { authRateLimiter, bookingRateLimiter } from '../middleware/rateLimiter';
 
@@ -92,7 +98,7 @@ router.get('/auth/me', authenticate, getCurrentUser);
 router.get('/doctors', getDoctors);
 router.get('/doctors/:id', getDoctorById);
 router.get('/doctors/:id/slots', authenticate, getDoctorSlots);
-router.post('/doctors/ai-match', aiMatchDoctor);
+router.post('/doctors/ai-match', validateBody(doctorMatchSchema), aiMatchDoctor);
 
 // Appointment Engine Endpoints (Protected by Booking Rate Limiter & Concurrency Guard)
 router.post('/appointments/book', bookingRateLimiter, authenticate, validateBody(bookAppointmentSchema), bookAppointment);
@@ -112,8 +118,8 @@ router.get('/prescriptions/my', authenticate, getMyPrescriptions);
 router.get('/prescriptions/:id', authenticate, getPrescriptionById);
 
 // AI Health & Clinical Services
-router.post('/ai/chat', authenticate, queryHealthAssistant);
-router.post('/ai/soap-draft', authenticate, generateSoapDraft);
-router.post('/ai/ocr-analyze', authenticate, analyzeReportDocument);
+router.post('/ai/chat', authenticate, validateBody(chatQuerySchema), queryHealthAssistant);
+router.post('/ai/soap-draft', authenticate, requireRole('DOCTOR', 'SUPER_ADMIN'), validateBody(soapDraftSchema), generateSoapDraft);
+router.post('/ai/ocr-analyze', authenticate, validateBody(reportAnalysisSchema), analyzeReportDocument);
 
 export default router;

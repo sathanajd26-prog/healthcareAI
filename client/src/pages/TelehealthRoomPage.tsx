@@ -40,6 +40,7 @@ export const TelehealthRoomPage: React.FC = () => {
   // AI SOAP Note state
   const [soapLoading, setSoapLoading] = useState(false);
   const [soapDraft, setSoapDraft] = useState<any>(null);
+  const [soapError, setSoapError] = useState<string | null>(null);
 
   const sendMessage = (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,20 +59,31 @@ export const TelehealthRoomPage: React.FC = () => {
 
   const generateSoap = async () => {
     setSoapLoading(true);
+    setSoapError(null);
     try {
+      const dialogueText = messages
+        .map((m) => `${m.sender}: ${m.text}`)
+        .join('\n');
+      const consultationText = dialogueText.trim().length >= 5
+        ? dialogueText
+        : `Consultation encounter with Dr. Ananya Deshmukh and patient ${activeFamilyMember}.`;
+
       const res = await api.generateSoapDraft(
-        'Patient reports mild frontal headaches and elevated fasting blood glucose (112 mg/dL). Denies chest pain or shortness of breath. Recommended continued Metformin 500mg and lifestyle walking.',
-        'Frontal headache & Glucose check-in'
+        consultationText,
+        `Encounter review for ${activeFamilyMember}`
       );
-      if (res.success) {
+      if (res.success && res.data) {
         setSoapDraft(res.data);
+      } else {
+        setSoapError(res.error?.message || 'Unable to generate SOAP note draft.');
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      setSoapError(err.message || 'Clinical documentation service error.');
     } finally {
       setSoapLoading(false);
     }
   };
+
 
   return (
     <div className="h-[calc(100vh-4rem)] bg-slate-950 text-white flex flex-col overflow-hidden">
@@ -289,26 +301,51 @@ export const TelehealthRoomPage: React.FC = () => {
                 </button>
               </div>
 
+              {soapError && (
+                <div className="p-3 bg-rose-950/60 border border-rose-800 rounded-xl text-rose-300 text-xs">
+                  <p className="font-bold">Documentation Notice:</p>
+                  <p className="mt-0.5 text-[11px]">{soapError}</p>
+                </div>
+              )}
+
               {soapDraft && (
                 <div className="space-y-3 bg-slate-800/80 p-3.5 rounded-xl border border-slate-700">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-700">
+                    <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">
+                      Clinical Encounter Draft
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950 text-amber-400 border border-amber-800">
+                      {soapDraft.metadata?.status || 'DRAFT'}
+                    </span>
+                  </div>
+
                   <div>
                     <span className="text-[10px] font-bold text-amber-400 uppercase">Subjective</span>
                     <p className="text-slate-300 mt-0.5">{soapDraft.subjective.chiefComplaint}</p>
+                    <p className="text-slate-400 text-[11px] mt-0.5 italic">{soapDraft.subjective.historyOfPresentIllness}</p>
                   </div>
                   <div>
                     <span className="text-[10px] font-bold text-amber-400 uppercase">Objective</span>
                     <p className="text-slate-300 mt-0.5">{soapDraft.objective.vitalsRecorded}</p>
+                    <p className="text-slate-400 text-[11px] mt-0.5 italic">{soapDraft.objective.physicalExamination}</p>
                   </div>
                   <div>
                     <span className="text-[10px] font-bold text-amber-400 uppercase">Assessment</span>
                     <p className="text-slate-300 mt-0.5">{soapDraft.assessment.primaryImpression}</p>
+                    {soapDraft.assessment.differential?.length > 0 && (
+                      <p className="text-slate-400 text-[11px] mt-0.5">
+                        Differential: {soapDraft.assessment.differential.join(', ')}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <span className="text-[10px] font-bold text-amber-400 uppercase">Plan</span>
-                    <p className="text-slate-300 mt-0.5">{soapDraft.plan.rxRecommendations.join(', ')}</p>
+                    <p className="text-slate-300 mt-0.5">{soapDraft.plan.rxRecommendations?.join(', ')}</p>
+                    <p className="text-slate-400 text-[11px] mt-0.5">{soapDraft.plan.lifestyleAdvice}</p>
+                    <p className="text-slate-400 text-[11px] mt-0.5">Follow-up: {soapDraft.plan.followUp}</p>
                   </div>
                   <p className="text-[10px] text-slate-400 pt-2 border-t border-slate-700 italic">
-                    * {soapDraft.aiWatermark}
+                    * {soapDraft.metadata?.aiWatermark || soapDraft.aiWatermark}
                   </p>
                 </div>
               )}

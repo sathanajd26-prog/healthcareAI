@@ -193,11 +193,22 @@ export const api = {
     return res.json();
   },
 
-  analyzeDocumentOCR: async (docType: string) => {
+  analyzeDocumentOCR: async (
+    params: string | {
+      documentType?: string;
+      fileName?: string;
+      mimeType?: string;
+      fileSize?: number;
+      fileContentBase64?: string;
+      textContent?: string;
+      isDemoRequested?: boolean;
+    }
+  ) => {
+    const payload = typeof params === 'string' ? { documentType: params } : params;
     const res = await fetch(`${API_BASE}/ai/ocr-analyze`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ documentType: docType }),
+      body: JSON.stringify(payload),
     });
     return res.json();
   },

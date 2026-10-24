@@ -275,11 +275,17 @@ export const HomePage: React.FC = () => {
                     <h3 className="text-lg font-bold text-slate-900">{aiResult.recommendedSpecialty}</h3>
                   </div>
                   <span className="text-xs text-medical-700 bg-white px-3 py-1 rounded-full border border-medical-200 font-medium">
-                    Verified Algorithm Match
+                    Deterministic Clinical Rule Match
                   </span>
                 </div>
 
-                <p className="text-xs text-slate-700 mt-3 leading-relaxed">
+                {aiResult.matchExplanation && (
+                  <p className="text-xs font-semibold text-teal-900 bg-teal-100/60 border border-teal-200/60 rounded-lg p-2.5 mt-3">
+                    <strong>Triage Rationale:</strong> {aiResult.matchExplanation}
+                  </p>
+                )}
+
+                <p className="text-xs text-slate-700 mt-2.5 leading-relaxed">
                   {aiResult.clinicalAdvice}
                 </p>
 

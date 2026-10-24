@@ -26,9 +26,18 @@ export const RecordsTimelinePage: React.FC = () => {
 
   // Upload & OCR Modal
   const [showUploadModal, setShowUploadModal] = useState(false);
-  const [uploadTitle, setUploadTitle] = useState('Comprehensive Blood Chemistry Panel');
+  const [uploadTitle, setUploadTitle] = useState('Laboratory Diagnostic Report');
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzedData, setAnalyzedData] = useState<any>(null);
+  const [selectedFile, setSelectedFile] = useState<{
+    name: string;
+    size: number;
+    type: string;
+    base64?: string;
+    text?: string;
+  } | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchRecords();
@@ -51,15 +60,89 @@ export const RecordsTimelinePage: React.FC = () => {
     }
   };
 
-  const handleUploadAndAnalyze = async () => {
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadError(null);
+    setAnalyzedData(null);
+
+    // Max 10MB limit
+    if (file.size > 10 * 1024 * 1024) {
+      setUploadError('File size exceeds the 10MB limit.');
+      return;
+    }
+
+    const isText = file.type.startsWith('text/') || file.name.endsWith('.txt') || file.name.endsWith('.csv');
+
+    if (isText) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setSelectedFile({
+          name: file.name,
+          size: file.size,
+          type: file.type || 'text/plain',
+          text: reader.result as string,
+        });
+        setUploadTitle(file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' '));
+      };
+      reader.readAsText(file);
+    } else {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        const base64Data = result.split(',')[1] || result;
+        setSelectedFile({
+          name: file.name,
+          size: file.size,
+          type: file.type || 'application/octet-stream',
+          base64: base64Data,
+        });
+        setUploadTitle(file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' '));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleAnalyzeRealFile = async () => {
+    if (!selectedFile) {
+      setUploadError('Please select a medical report file to analyze.');
+      return;
+    }
+
     setAnalyzing(true);
+    setUploadError(null);
     try {
-      const res = await api.analyzeDocumentOCR('BLOOD_CHEMISTRY');
-      if (res.success) {
+      const res = await api.analyzeDocumentOCR({
+        fileName: selectedFile.name,
+        mimeType: selectedFile.type,
+        fileSize: selectedFile.size,
+        fileContentBase64: selectedFile.base64,
+        textContent: selectedFile.text,
+      });
+
+      if (res.success && res.data) {
+        setAnalyzedData(res.data);
+      } else {
+        setUploadError(res.error?.message || 'Failed to analyze document.');
+      }
+    } catch (err: any) {
+      setUploadError(err.message || 'Error uploading document.');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const handleRunDemoSimulation = async () => {
+    setAnalyzing(true);
+    setUploadError(null);
+    try {
+      const res = await api.analyzeDocumentOCR({ isDemoRequested: true });
+      if (res.success && res.data) {
         setAnalyzedData(res.data);
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      setUploadError(err.message || 'Demo simulation failed.');
     } finally {
       setAnalyzing(false);
     }
@@ -73,10 +156,13 @@ export const RecordsTimelinePage: React.FC = () => {
         category: analyzedData.classifiedType,
         summary: analyzedData.clinicalSummary,
         biomarkers: analyzedData.extractedBiomarkers,
-        aiInsights: 'Values synchronized into longitudinal health graph.',
+        aiInsights: analyzedData.isDemoData
+          ? 'Synchronized from synthetic demonstration profile.'
+          : 'Biomarkers extracted and synchronized into longitudinal EMR graph.',
       });
       setShowUploadModal(false);
       setAnalyzedData(null);
+      setSelectedFile(null);
       fetchRecords();
     } catch (err) {
       console.error(err);
@@ -249,7 +335,7 @@ export const RecordsTimelinePage: React.FC = () => {
       {/* Upload & OCR Modal */}
       {showUploadModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-slate-200 max-w-lg w-full p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95">
+          <div className="bg-white rounded-3xl border border-slate-200 max-w-lg w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center space-x-2">
                 <Upload className="w-5 h-5 text-medical-700" />
@@ -268,35 +354,125 @@ export const RecordsTimelinePage: React.FC = () => {
               />
             </div>
 
-            {/* Drag & Drop Simulation Box */}
+            {/* Hidden Real File Input */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept=".txt,.csv,.pdf,.jpg,.jpeg,.png,.webp"
+              className="hidden"
+              onChange={handleFileSelect}
+            />
+
+            {/* Real File Selector Box */}
             <div
-              onClick={handleUploadAndAnalyze}
-              className="border-2 border-dashed border-teal-300 bg-teal-50/40 rounded-2xl p-8 text-center cursor-pointer hover:bg-teal-50 transition-colors"
+              onClick={() => fileInputRef.current?.click()}
+              className="border-2 border-dashed border-teal-300 bg-teal-50/40 rounded-2xl p-6 text-center cursor-pointer hover:bg-teal-50 transition-colors"
             >
               <FlaskConical className="w-8 h-8 text-medical-600 mx-auto mb-2" />
-              <p className="text-xs font-bold text-slate-800">Click to Select & OCR Scan Medical Report</p>
-              <p className="text-[11px] text-slate-400 mt-1">Accepts PDF, JPG, PNG, Scanned Laboratory Sheets</p>
+              {selectedFile ? (
+                <div>
+                  <p className="text-xs font-bold text-teal-800">Selected: {selectedFile.name}</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    {(selectedFile.size / 1024).toFixed(1)} KB • {selectedFile.type || 'Plain Document'}
+                  </p>
+                  <p className="text-[10px] text-teal-600 mt-1 font-semibold">Click to choose a different file</p>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-xs font-bold text-slate-800">Click to Select Medical Report from Device</p>
+                  <p className="text-[11px] text-slate-400 mt-1">Accepts Plain Text, CSV, PDF, JPG, PNG (Max 10MB)</p>
+                </div>
+              )}
+            </div>
+
+            {uploadError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs flex items-center space-x-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{uploadError}</span>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleAnalyzeRealFile}
+                disabled={analyzing || !selectedFile}
+                className="flex-1 py-2.5 bg-medical-700 hover:bg-medical-800 disabled:opacity-50 text-white rounded-xl font-bold text-xs shadow-xs transition-colors"
+              >
+                {analyzing ? 'Analyzing Report...' : 'Analyze Selected File'}
+              </button>
+              <button
+                type="button"
+                onClick={handleRunDemoSimulation}
+                disabled={analyzing}
+                className="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs transition-colors"
+                title="Run with sample laboratory biomarkers for testing"
+              >
+                Sample Demo
+              </button>
             </div>
 
             {analyzing && (
               <p className="text-xs text-center font-bold text-teal-700 animate-pulse">
-                Extracting clinical biomarkers via OCR & matching LOINC reference ranges...
+                Extracting clinical biomarkers & matching reference ranges...
               </p>
             )}
 
             {analyzedData && (
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs space-y-3">
-                <div className="flex items-center space-x-1.5 text-emerald-700 font-bold">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>OCR Extraction Complete ({analyzedData.classifiedType})</span>
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                  <div className="flex items-center space-x-1.5 text-emerald-700 font-bold">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Analysis Complete: {analyzedData.classifiedType}</span>
+                  </div>
+                  {analyzedData.isDemoData && (
+                    <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded text-[10px] font-bold">
+                      DEMO SAMPLE
+                    </span>
+                  )}
                 </div>
-                <div className="space-y-1">
-                  {analyzedData.extractedBiomarkers.map((b: any, i: number) => (
-                    <p key={i} className="text-slate-700">
-                      • <strong>{b.name}:</strong> {b.value} {b.unit} ({b.status})
-                    </p>
-                  ))}
-                </div>
+
+                <p className="text-slate-600 leading-relaxed text-[11px]">
+                  {analyzedData.clinicalSummary}
+                </p>
+
+                {/* Limitations notice if OCR unavailable */}
+                {analyzedData.limitations && (
+                  <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-[11px]">
+                    <strong>Note:</strong> {analyzedData.limitations}
+                  </div>
+                )}
+
+                {/* Biomarkers */}
+                {analyzedData.extractedBiomarkers && analyzedData.extractedBiomarkers.length > 0 ? (
+                  <div className="space-y-1.5 pt-1">
+                    <p className="font-bold text-slate-700 text-[11px]">Extracted Biomarkers:</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {analyzedData.extractedBiomarkers.map((b: any, i: number) => (
+                        <div key={i} className="p-2 bg-white rounded-lg border border-slate-200">
+                          <p className="font-bold text-slate-800">{b.name}</p>
+                          <p className="text-slate-600">
+                            {b.value} {b.unit}{' '}
+                            <span className={`font-bold text-[10px] ${b.status === 'NORMAL' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                              ({b.status})
+                            </span>
+                          </p>
+                          <p className="text-[10px] text-slate-400">Ref: {b.referenceRange}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-slate-500 italic">
+                    No biomarkers extracted from this document.
+                  </p>
+                )}
+
+                <p className="text-[10px] text-slate-400 italic pt-1">
+                  * {analyzedData.disclaimer}
+                </p>
+
                 <button
                   onClick={saveAnalyzedRecord}
                   className="w-full py-2.5 bg-medical-700 hover:bg-medical-800 text-white rounded-xl font-bold text-xs shadow-xs"
