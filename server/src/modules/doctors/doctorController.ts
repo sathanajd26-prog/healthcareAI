@@ -2,6 +2,14 @@ import { Request, Response } from 'express';
 import { Doctor } from '../../models/Doctor';
 import { Appointment } from '../../models/Appointment';
 
+/**
+ * Safely escape regular expression special metacharacters to eliminate
+ * ReDoS (Regular Expression Denial of Service) and regex syntax injection attacks.
+ */
+export const escapeRegex = (str: string): string => {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+};
+
 // Search & list doctors with multi-faceted filtering
 export const getDoctors = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -10,15 +18,22 @@ export const getDoctors = async (req: Request, res: Response): Promise<void> => 
     const filter: any = { verificationStatus: 'VERIFIED' };
 
     if (specialty && specialty !== 'All') {
-      filter.specialties = { $regex: new RegExp(String(specialty), 'i') };
+      const cleanSpecialty = escapeRegex(String(specialty).slice(0, 100).trim());
+      if (cleanSpecialty) {
+        filter.specialties = { $regex: new RegExp(cleanSpecialty, 'i') };
+      }
     }
 
     if (query) {
-      filter.$or = [
-        { fullName: { $regex: new RegExp(String(query), 'i') } },
-        { specialties: { $regex: new RegExp(String(query), 'i') } },
-        { 'clinicAffiliations.clinicName': { $regex: new RegExp(String(query), 'i') } },
-      ];
+      const cleanQuery = escapeRegex(String(query).slice(0, 100).trim());
+      if (cleanQuery) {
+        const queryRegex = new RegExp(cleanQuery, 'i');
+        filter.$or = [
+          { fullName: { $regex: queryRegex } },
+          { specialties: { $regex: queryRegex } },
+          { 'clinicAffiliations.clinicName': { $regex: queryRegex } },
+        ];
+      }
     }
 
     if (mode && mode !== 'ALL') {

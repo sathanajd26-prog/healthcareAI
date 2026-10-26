@@ -171,7 +171,12 @@ export const verifyOTP = async (req: Request, res: Response): Promise<void> => {
   }
 
   const token = jwt.sign(
-    { id: user._id, role: user.role, permissions: user.permissions },
+    {
+      id: user._id,
+      role: user.role,
+      permissions: user.permissions,
+      tokenVersion: user.tokenVersion ?? 0,
+    },
     env.JWT_SECRET,
     { expiresIn: env.JWT_EXPIRES_IN as any }
   );
@@ -195,11 +200,24 @@ export const verifyOTP = async (req: Request, res: Response): Promise<void> => {
 
 // Logout User
 export const logoutUser = async (req: AuthRequest, res: Response): Promise<void> => {
-  // Stateless JWT logout acknowledgment (client invalidates local token storage)
-  res.json({
-    success: true,
-    message: 'Session terminated successfully',
-  });
+  try {
+    if (req.user?.id) {
+      await User.findByIdAndUpdate(req.user.id, {
+        $inc: { tokenVersion: 1 },
+        lastLogoutAt: new Date(),
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Session terminated successfully',
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: { code: 'SERVER_ERROR', message: 'Failed to terminate session' },
+    });
+  }
 };
 
 // Get current profile

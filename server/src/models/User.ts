@@ -9,6 +9,8 @@ export interface IUser extends Document {
   permissions: string[];
   isVerified: boolean;
   avatarUrl?: string;
+  tokenVersion: number;
+  lastLogoutAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -28,6 +30,8 @@ const userSchema = new Schema<IUser>(
     permissions: [{ type: String }],
     isVerified: { type: Boolean, default: false },
     avatarUrl: { type: String },
+    tokenVersion: { type: Number, default: 0 },
+    lastLogoutAt: { type: Date },
   },
   { timestamps: true }
 );

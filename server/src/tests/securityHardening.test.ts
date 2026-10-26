@@ -1,6 +1,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 import { validateAndLoadConfig } from '../config/env';
+import { getMongooseConnectOptions } from '../config/db';
 import { ensureTestServer, closeTestServer } from './testSetup';
 import { OtpRecord } from '../models/OtpRecord';
 import { User } from '../models/User';
@@ -117,6 +118,86 @@ describe('AegisHealth Milestone 2: Security Hardening & Runtime Verification Tes
           /Static OTP shortcuts are strictly forbidden in production/,
           'Should abort startup if dev OTP bypass is enabled in production'
         );
+      } finally {
+        process.env = origEnv;
+      }
+    });
+
+    it('Fails startup when CORS_ORIGIN is missing in production', () => {
+      const origEnv = process.env;
+      try {
+        process.env = {
+          ...origEnv,
+          NODE_ENV: 'production',
+          JWT_SECRET: 'strong_production_secret_key_32_characters_minimum_entropy',
+          MONGODB_URI: 'mongodb+srv://admin:pass@cluster.mongodb.net/aegis',
+          CORS_ORIGIN: '',
+        };
+        assert.throws(
+          () => validateAndLoadConfig(),
+          /CORS_ORIGIN is required in production/,
+          'Should abort startup when CORS_ORIGIN is missing in production'
+        );
+      } finally {
+        process.env = origEnv;
+      }
+    });
+
+    it('Fails startup when CORS_ORIGIN is wildcard "*" in production', () => {
+      const origEnv = process.env;
+      try {
+        process.env = {
+          ...origEnv,
+          NODE_ENV: 'production',
+          JWT_SECRET: 'strong_production_secret_key_32_characters_minimum_entropy',
+          MONGODB_URI: 'mongodb+srv://admin:pass@cluster.mongodb.net/aegis',
+          CORS_ORIGIN: '*',
+        };
+        assert.throws(
+          () => validateAndLoadConfig(),
+          /cannot be wildcard "\*"/,
+          'Should abort startup when CORS_ORIGIN is wildcard in production'
+        );
+      } finally {
+        process.env = origEnv;
+      }
+    });
+
+    it('Fails startup when CORS_ORIGIN contains invalid URL formats in production', () => {
+      const origEnv = process.env;
+      try {
+        process.env = {
+          ...origEnv,
+          NODE_ENV: 'production',
+          JWT_SECRET: 'strong_production_secret_key_32_characters_minimum_entropy',
+          MONGODB_URI: 'mongodb+srv://admin:pass@cluster.mongodb.net/aegis',
+          CORS_ORIGIN: 'not-a-valid-url,https://valid.aegis.org',
+        };
+        assert.throws(
+          () => validateAndLoadConfig(),
+          /Invalid origin format in CORS_ORIGIN/,
+          'Should abort startup when CORS_ORIGIN has invalid origin format'
+        );
+      } finally {
+        process.env = origEnv;
+      }
+    });
+
+    it('Succeeds validation in production when valid CORS_ORIGIN and secrets are provided', () => {
+      const origEnv = process.env;
+      try {
+        process.env = {
+          ...origEnv,
+          NODE_ENV: 'production',
+          JWT_SECRET: 'strong_production_secret_key_32_characters_minimum_entropy',
+          MONGODB_URI: 'mongodb+srv://admin:pass@cluster.mongodb.net/aegis',
+          CORS_ORIGIN: 'https://app.aegishealth.org,https://doctor.aegishealth.org',
+          ENABLE_DEV_OTP_SHORTCUT: 'false',
+        };
+        const config = validateAndLoadConfig();
+        assert.strictEqual(config.CORS_ORIGIN.length, 2);
+        assert.ok(config.CORS_ORIGIN.includes('https://app.aegishealth.org'));
+        assert.ok(config.CORS_ORIGIN.includes('https://doctor.aegishealth.org'));
       } finally {
         process.env = origEnv;
       }
@@ -262,6 +343,176 @@ describe('AegisHealth Milestone 2: Security Hardening & Runtime Verification Tes
       });
       // Rate limiter standard headers
       assert.ok(res.headers.has('ratelimit-limit') || res.headers.has('x-ratelimit-limit'), 'Should include rate limit headers');
+    });
+  });
+
+  describe('4. CORS, Content Security Policy (CSP) & Database Production Safeguards', () => {
+    it('Helmet emits a restrictive Content-Security-Policy header', async () => {
+      const res = await apiRequest('/health');
+      const csp = res.headers.get('content-security-policy') || '';
+      assert.ok(csp.length > 0, 'Content-Security-Policy header must be present');
+      assert.ok(csp.includes("default-src 'self'"), 'CSP must restrict default-src to self');
+      assert.ok(csp.includes("script-src 'self'"), 'CSP must restrict script-src to self');
+      assert.ok(csp.includes("frame-ancestors 'none'"), 'CSP must forbid iframe embedding (anti-clickjacking)');
+      assert.ok(csp.includes("object-src 'none'"), 'CSP must forbid plugin objects');
+      assert.ok(csp.includes('https://images.unsplash.com'), 'CSP must allow verified doctor avatar image hosts');
+      assert.ok(csp.includes('https://fonts.googleapis.com'), 'CSP must allow Google Fonts style sources');
+      assert.strictEqual(csp.includes("'unsafe-eval'"), false, 'CSP must NEVER include unsafe-eval');
+    });
+
+    it('Disables Mongoose autoIndex in production while enabling in development/test', () => {
+      const prodOpts = getMongooseConnectOptions('production');
+      assert.strictEqual(prodOpts.autoIndex, false, 'autoIndex must be disabled in production');
+
+      const devOpts = getMongooseConnectOptions('development');
+      assert.strictEqual(devOpts.autoIndex, true, 'autoIndex should be enabled in development');
+
+      const testOpts = getMongooseConnectOptions('test');
+      assert.strictEqual(testOpts.autoIndex, true, 'autoIndex should be enabled in test');
+    });
+
+    it('Reflects allowed trusted origin and allows credentials in CORS', async () => {
+      const trustedOrigin = 'http://localhost:5173';
+      const res = await fetch(`${API_BASE}/health`, {
+        method: 'GET',
+        headers: {
+          'Origin': trustedOrigin,
+        },
+      });
+
+      assert.strictEqual(res.headers.get('access-control-allow-origin'), trustedOrigin);
+      assert.strictEqual(res.headers.get('access-control-allow-credentials'), 'true');
+    });
+
+    it('Does NOT reflect untrusted origins in Access-Control-Allow-Origin header', async () => {
+      const evilOrigin = 'https://malicious-healthcare-phishing.com';
+      const res = await fetch(`${API_BASE}/health`, {
+        method: 'GET',
+        headers: {
+          'Origin': evilOrigin,
+        },
+      });
+
+      // Untrusted origin must NOT be reflected
+      assert.strictEqual(
+        res.headers.get('access-control-allow-origin'),
+        null,
+        'Access-Control-Allow-Origin must not be present for untrusted origin'
+      );
+    });
+
+    it('Responds to CORS preflight OPTIONS request for trusted origins', async () => {
+      const trustedOrigin = 'http://localhost:5173';
+      const res = await fetch(`${API_BASE}/health`, {
+        method: 'OPTIONS',
+        headers: {
+          'Origin': trustedOrigin,
+          'Access-Control-Request-Method': 'GET',
+          'Access-Control-Request-Headers': 'Authorization, Content-Type',
+        },
+      });
+
+      assert.strictEqual(res.status, 204);
+      assert.strictEqual(res.headers.get('access-control-allow-origin'), trustedOrigin);
+      assert.strictEqual(res.headers.get('access-control-allow-credentials'), 'true');
+    });
+
+    it('Rejects CORS preflight OPTIONS request for untrusted origins', async () => {
+      const evilOrigin = 'https://attacker.evil.corp';
+      const res = await fetch(`${API_BASE}/health`, {
+        method: 'OPTIONS',
+        headers: {
+          'Origin': evilOrigin,
+          'Access-Control-Request-Method': 'GET',
+        },
+      });
+
+      assert.strictEqual(
+        res.headers.get('access-control-allow-origin'),
+        null,
+        'Preflight for untrusted origin must NOT emit Access-Control-Allow-Origin'
+      );
+    });
+  });
+
+  describe('5. SEC-06: Endpoint-Specific Rate Limiting & Denial-of-Service Defenses', () => {
+    it('Emits standard RateLimit headers on public AI matching endpoint (/doctors/ai-match)', async () => {
+      const res = await apiRequest('/doctors/ai-match', {
+        method: 'POST',
+        body: { symptomText: 'persistent headache' },
+      });
+      assert.strictEqual(res.status, 200);
+      assert.ok(
+        res.headers.has('ratelimit-limit') || res.headers.has('x-ratelimit-limit'),
+        'Must include standard rate limit headers'
+      );
+    });
+
+    it('Emits standard RateLimit headers on AI Health Assistant (/ai/chat)', async () => {
+      const authPhone = `98765432${Math.floor(10 + Math.random() * 89)}`;
+      createdTestPhones.push(authPhone);
+      await apiRequest('/auth/request-otp', { method: 'POST', body: { phone: authPhone } });
+      const loginRes = await apiRequest('/auth/verify-otp', { method: 'POST', body: { phone: authPhone, otp: '123456' } });
+      const token = loginRes.data.data.token;
+
+      const res = await apiRequest('/ai/chat', {
+        method: 'POST',
+        token,
+        body: { question: 'Healthy hydration advice' },
+      });
+      assert.strictEqual(res.status, 200);
+      assert.ok(
+        res.headers.has('ratelimit-limit') || res.headers.has('x-ratelimit-limit'),
+        'Must include rate limit headers on AI chat'
+      );
+    });
+
+    it('Enforces 429 Too Many Requests when rate threshold is exceeded', async () => {
+      const express = (await import('express')).default;
+      const rateLimit = (await import('express-rate-limit')).default;
+      const testApp = express();
+
+      const strictLimiter = rateLimit({
+        windowMs: 60000,
+        max: 2,
+        standardHeaders: true,
+        legacyHeaders: false,
+        handler: (req, res) => {
+          res.status(429).json({
+            success: false,
+            error: {
+              code: 'RATE_LIMIT_EXCEEDED',
+              message: 'Rate limit exceeded. Please wait before retrying.',
+            },
+          });
+        },
+      });
+
+      testApp.post('/test/limited-endpoint', strictLimiter, (_req, res) => {
+        res.json({ success: true });
+      });
+
+      const server = testApp.listen(0);
+      const port = (server.address() as any).port;
+
+      try {
+        // Request 1: Allowed
+        const res1 = await fetch(`http://127.0.0.1:${port}/test/limited-endpoint`, { method: 'POST' });
+        assert.strictEqual(res1.status, 200);
+
+        // Request 2: Allowed
+        const res2 = await fetch(`http://127.0.0.1:${port}/test/limited-endpoint`, { method: 'POST' });
+        assert.strictEqual(res2.status, 200);
+
+        // Request 3: Blocked (429)
+        const res3 = await fetch(`http://127.0.0.1:${port}/test/limited-endpoint`, { method: 'POST' });
+        assert.strictEqual(res3.status, 429);
+        const json3: any = await res3.json();
+        assert.strictEqual(json3.success, false);
+        assert.strictEqual(json3.error.code, 'RATE_LIMIT_EXCEEDED');
+      } finally {
+        server.close();
+      }
     });
   });
 });

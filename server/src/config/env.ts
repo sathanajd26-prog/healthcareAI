@@ -15,6 +15,17 @@ const INSECURE_DEFAULT_SECRETS = [
   'changeme',
 ];
 
+export const DEFAULT_DEV_CORS_ORIGINS = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'http://localhost:5001',
+  'http://127.0.0.1:5001',
+  'http://localhost:5002',
+  'http://127.0.0.1:5002',
+];
+
 export interface AppConfig {
   NODE_ENV: 'development' | 'production' | 'test';
   PORT: number;
@@ -26,10 +37,13 @@ export interface AppConfig {
   TWILIO_ACCOUNT_SID?: string;
   TWILIO_AUTH_TOKEN?: string;
   TWILIO_PHONE_NUMBER?: string;
-  CORS_ORIGIN: string | string[];
+  CORS_ORIGIN: string[];
   RATE_LIMIT_WINDOW_MS: number;
   RATE_LIMIT_MAX_AUTH: number;
   RATE_LIMIT_MAX_BOOKING: number;
+  RATE_LIMIT_MAX_AI_MATCH: number;
+  RATE_LIMIT_MAX_AI_CHAT: number;
+  RATE_LIMIT_MAX_AI_OCR: number;
 }
 
 export function validateAndLoadConfig(): AppConfig {
@@ -39,6 +53,15 @@ export function validateAndLoadConfig(): AppConfig {
   const jwtSecret = process.env.JWT_SECRET || (isProduction ? '' : 'dev_jwt_secret_key_for_local_testing_only_32_chars_long');
   const mongoUri = process.env.MONGODB_URI || (isProduction ? '' : 'mongodb://127.0.0.1:27017/hospital_superapp');
   const enableDevOtp = process.env.ENABLE_DEV_OTP_SHORTCUT === 'true';
+
+  // Parse CORS origins
+  let corsOrigins: string[] = [];
+  const rawCorsOrigin = process.env.CORS_ORIGIN;
+  if (rawCorsOrigin && rawCorsOrigin.trim()) {
+    corsOrigins = rawCorsOrigin.split(',').map((s) => s.trim()).filter(Boolean);
+  } else if (!isProduction) {
+    corsOrigins = [...DEFAULT_DEV_CORS_ORIGINS];
+  }
 
   // Production Strict Security Validations
   if (isProduction) {
@@ -66,6 +89,19 @@ export function validateAndLoadConfig(): AppConfig {
       errors.push('ENABLE_DEV_OTP_SHORTCUT is enabled. Static OTP shortcuts are strictly forbidden in production.');
     }
 
+    // CORS Origin Production Safeguards
+    if (!rawCorsOrigin || corsOrigins.length === 0) {
+      errors.push('CORS_ORIGIN is required in production. Must specify explicit, trusted frontend origin(s).');
+    } else if (corsOrigins.includes('*')) {
+      errors.push('CORS_ORIGIN cannot be wildcard "*" in production when credentials are enabled.');
+    } else {
+      for (const origin of corsOrigins) {
+        if (!/^https?:\/\/[a-zA-Z0-9\-._~%!$&'()*+,;=]+(:[0-9]+)?$/.test(origin)) {
+          errors.push(`Invalid origin format in CORS_ORIGIN: "${origin}". Origins must be valid URLs (e.g. "https://app.aegishealth.org").`);
+        }
+      }
+    }
+
     if (errors.length > 0) {
       const errorMsg = `\n========================================================\n[CRITICAL SECURITY CONFIGURATION ERROR - STARTUP ABORTED]\n${errors.map((e) => `  - ${e}`).join('\n')}\n========================================================\n`;
       console.error(errorMsg);
@@ -78,10 +114,6 @@ export function validateAndLoadConfig(): AppConfig {
     }
   }
 
-  const corsOrigin = process.env.CORS_ORIGIN
-    ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim())
-    : '*';
-
   return {
     NODE_ENV: nodeEnv,
     PORT: parseInt(process.env.PORT || '5001', 10),
@@ -93,10 +125,13 @@ export function validateAndLoadConfig(): AppConfig {
     TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID,
     TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN,
     TWILIO_PHONE_NUMBER: process.env.TWILIO_PHONE_NUMBER,
-    CORS_ORIGIN: corsOrigin,
+    CORS_ORIGIN: corsOrigins,
     RATE_LIMIT_WINDOW_MS: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10), // 15 mins default
     RATE_LIMIT_MAX_AUTH: parseInt(process.env.RATE_LIMIT_MAX_AUTH || (nodeEnv === 'test' ? '500' : '15'), 10),
     RATE_LIMIT_MAX_BOOKING: parseInt(process.env.RATE_LIMIT_MAX_BOOKING || (nodeEnv === 'test' ? '500' : '30'), 10),
+    RATE_LIMIT_MAX_AI_MATCH: parseInt(process.env.RATE_LIMIT_MAX_AI_MATCH || (nodeEnv === 'test' ? '500' : '30'), 10),
+    RATE_LIMIT_MAX_AI_CHAT: parseInt(process.env.RATE_LIMIT_MAX_AI_CHAT || (nodeEnv === 'test' ? '500' : '20'), 10),
+    RATE_LIMIT_MAX_AI_OCR: parseInt(process.env.RATE_LIMIT_MAX_AI_OCR || (nodeEnv === 'test' ? '500' : '10'), 10),
   };
 }
 

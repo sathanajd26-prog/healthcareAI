@@ -2,7 +2,7 @@ import http from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
-import app from './app';
+import app, { corsOptions } from './app';
 import { connectDB, isDbConnected, disconnectDB } from './config/db';
 import { Doctor } from './models/Doctor';
 import { User } from './models/User';
@@ -17,11 +17,7 @@ const server = http.createServer(app);
 
 // Initialize Socket.io with strict CORS and Secure Authentication Middleware
 const io = new SocketIOServer(server, {
-  cors: {
-    origin: env.CORS_ORIGIN,
-    methods: ['GET', 'POST'],
-    credentials: true,
-  },
+  cors: corsOptions,
 });
 
 // Socket.io Authentication Middleware: Reject unauthenticated connections
@@ -45,6 +41,15 @@ io.use(async (socket, next) => {
       return next(new Error('USER_NOT_FOUND: User record does not exist'));
     }
 
+    const currentTokenVersion = userDoc.tokenVersion ?? 0;
+    if (decoded.tokenVersion !== undefined) {
+      if (decoded.tokenVersion !== currentTokenVersion) {
+        return next(new Error('TOKEN_REVOKED: Session has been terminated or logged out'));
+      }
+    } else if (currentTokenVersion > 0) {
+      return next(new Error('TOKEN_REVOKED: Session has been terminated or logged out'));
+    }
+
     socket.data.user = {
       id: userDoc._id.toString(),
       fullName: userDoc.fullName,
@@ -60,7 +65,7 @@ io.use(async (socket, next) => {
 
 io.on('connection', (socket) => {
   const authUser = socket.data.user;
-  console.log(`[Socket.io] Authenticated user connected: ${authUser.fullName} (${authUser.role}) [socket: ${socket.id}]`);
+  console.log(`[Socket.io] Authenticated user connected: userId=${authUser.id} (role=${authUser.role}) [socket: ${socket.id}]`);
 
   // Join Telemedicine Encounter Room with Strict Clinical Authorization Guard
   socket.on('join-room', async ({ roomId }, callback) => {
@@ -84,28 +89,27 @@ io.on('connection', (socket) => {
         appointment = await Appointment.findOne({ telemedicineRoomId: cleanRoomId });
       }
 
+      if (!appointment) {
+        const notFoundMsg = 'Clinical appointment or encounter room not found.';
+        socket.emit('error', { code: 'APPOINTMENT_NOT_FOUND', message: notFoundMsg });
+        return ack({ success: false, error: 'APPOINTMENT_NOT_FOUND', message: notFoundMsg });
+      }
+
       let authorized = false;
 
-      if (appointment) {
-        if (authUser.role === 'SUPER_ADMIN' || authUser.role === 'HOSPITAL_ADMIN') {
+      if (authUser.role === 'SUPER_ADMIN' || authUser.role === 'HOSPITAL_ADMIN') {
+        authorized = true;
+      } else if (authUser.role === 'PATIENT') {
+        const patient = await Patient.findOne({ userId: authUser.id });
+        if (patient && appointment.patientId.toString() === patient._id.toString()) {
           authorized = true;
-        } else if (authUser.role === 'PATIENT') {
-          const patient = await Patient.findOne({ userId: authUser.id });
-          if (patient && appointment.patientId.toString() === patient._id.toString()) {
-            authorized = true;
-          }
-        } else if (authUser.role === 'DOCTOR') {
-          let doctor = await Doctor.findOne({ userId: authUser.id });
-          if (!doctor) {
-            doctor = await Doctor.findById(authUser.id);
-          }
-          if (doctor && appointment.doctorId.toString() === doctor._id.toString()) {
-            authorized = true;
-          }
         }
-      } else {
-        // Rooms not associated with an existing appointment require administrative privileges
-        if (authUser.role === 'SUPER_ADMIN' || authUser.role === 'HOSPITAL_ADMIN') {
+      } else if (authUser.role === 'DOCTOR') {
+        let doctor = await Doctor.findOne({ userId: authUser.id });
+        if (!doctor) {
+          doctor = await Doctor.findById(authUser.id);
+        }
+        if (doctor && appointment.doctorId.toString() === doctor._id.toString()) {
           authorized = true;
         }
       }
@@ -116,8 +120,14 @@ io.on('connection', (socket) => {
         return ack({ success: false, error: 'FORBIDDEN_ROOM_ACCESS', message: forbiddenMsg });
       }
 
+      if (appointment.status === 'CANCELLED') {
+        const cancelledMsg = 'Cannot access telehealth room for a cancelled appointment.';
+        socket.emit('error', { code: 'APPOINTMENT_CANCELLED', message: cancelledMsg });
+        return ack({ success: false, error: 'APPOINTMENT_CANCELLED', message: cancelledMsg });
+      }
+
       socket.join(cleanRoomId);
-      console.log(`[Telehealth] Authenticated ${authUser.fullName} (${authUser.role}) authorized and joined ${cleanRoomId}`);
+      console.log(`[Telehealth] User authorized for room: userId=${authUser.id} (role=${authUser.role}) room=${cleanRoomId}`);
 
       // Broadcast verified participant info (server-authoritative identity)
       socket.to(cleanRoomId).emit('user-joined', {
@@ -133,7 +143,7 @@ io.on('connection', (socket) => {
         role: authUser.role,
       });
     } catch (err: any) {
-      console.error('[Telehealth] Room authorization error:', err);
+      console.error('[Telehealth] Room authorization error:', err?.message || 'Internal authorization failure');
       const errorMsg = 'Server error validating clinical room access.';
       socket.emit('error', { code: 'SERVER_ERROR', message: errorMsg });
       return ack({ success: false, error: 'SERVER_ERROR', message: errorMsg });

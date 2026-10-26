@@ -17,6 +17,7 @@ import {
 } from '../modules/appointments/appointmentSchemas';
 import { validateBody } from '../middleware/validation';
 import { getHealthTimeline, createMedicalRecord } from '../modules/records/recordController';
+import { createMedicalRecordSchema } from '../modules/records/recordSchemas';
 import { createPrescription, getMyPrescriptions, getPrescriptionById } from '../modules/prescriptions/prescriptionController';
 import { queryHealthAssistant, generateSoapDraft, analyzeReportDocument } from '../modules/ai/aiController';
 import {
@@ -26,7 +27,13 @@ import {
   doctorMatchSchema
 } from '../modules/ai/aiSchemas';
 import { authenticate, requireRole } from '../middleware/auth';
-import { authRateLimiter, bookingRateLimiter } from '../middleware/rateLimiter';
+import {
+  authRateLimiter,
+  bookingRateLimiter,
+  aiPublicMatchLimiter,
+  aiChatLimiter,
+  aiOcrLimiter,
+} from '../middleware/rateLimiter';
 
 import { isDbConnected, getDbState } from '../config/db';
 
@@ -98,7 +105,7 @@ router.get('/auth/me', authenticate, getCurrentUser);
 router.get('/doctors', getDoctors);
 router.get('/doctors/:id', getDoctorById);
 router.get('/doctors/:id/slots', authenticate, getDoctorSlots);
-router.post('/doctors/ai-match', validateBody(doctorMatchSchema), aiMatchDoctor);
+router.post('/doctors/ai-match', aiPublicMatchLimiter, validateBody(doctorMatchSchema), aiMatchDoctor);
 
 // Appointment Engine Endpoints (Protected by Booking Rate Limiter & Concurrency Guard)
 router.post('/appointments/book', bookingRateLimiter, authenticate, validateBody(bookAppointmentSchema), bookAppointment);
@@ -110,7 +117,7 @@ router.get('/appointments/doctor-queue', authenticate, requireRole('DOCTOR', 'SU
 
 // Medical Records & Timeline Endpoints
 router.get('/records/timeline', authenticate, getHealthTimeline);
-router.post('/records/upload', authenticate, createMedicalRecord);
+router.post('/records/upload', authenticate, validateBody(createMedicalRecordSchema), createMedicalRecord);
 
 // Digital Prescriptions Endpoints
 router.post('/prescriptions', authenticate, requireRole('DOCTOR', 'SUPER_ADMIN'), createPrescription);
@@ -118,8 +125,8 @@ router.get('/prescriptions/my', authenticate, getMyPrescriptions);
 router.get('/prescriptions/:id', authenticate, getPrescriptionById);
 
 // AI Health & Clinical Services
-router.post('/ai/chat', authenticate, validateBody(chatQuerySchema), queryHealthAssistant);
+router.post('/ai/chat', authenticate, aiChatLimiter, validateBody(chatQuerySchema), queryHealthAssistant);
 router.post('/ai/soap-draft', authenticate, requireRole('DOCTOR', 'SUPER_ADMIN'), validateBody(soapDraftSchema), generateSoapDraft);
-router.post('/ai/ocr-analyze', authenticate, validateBody(reportAnalysisSchema), analyzeReportDocument);
+router.post('/ai/ocr-analyze', authenticate, aiOcrLimiter, validateBody(reportAnalysisSchema), analyzeReportDocument);
 
 export default router;

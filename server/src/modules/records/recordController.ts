@@ -99,30 +99,114 @@ export const createMedicalRecord = async (req: AuthRequest, res: Response): Prom
       return;
     }
 
-    const { title, category, summary, encounterType, vitals, clinicalNotes, biomarkers, aiInsights, patientId } = req.body;
+    const {
+      title,
+      category,
+      summary,
+      encounterType,
+      vitals,
+      clinicalNotes,
+      biomarkers,
+      aiInsights,
+      attachments,
+      patientId,
+    } = req.body;
 
     let targetPatient: any = null;
+    let authorDoctorId: mongoose.Types.ObjectId;
+    let authorDoctorName: string;
 
     if (req.user.role === 'PATIENT') {
+      // Derive patient strictly from authenticated user session — client-supplied patientId is never trusted
       targetPatient = await Patient.findOne({ userId: req.user.id });
-    } else if (req.user.role === 'DOCTOR' || req.user.role === 'SUPER_ADMIN') {
-      if (patientId && mongoose.Types.ObjectId.isValid(patientId)) {
-        targetPatient = await Patient.findById(patientId);
+      if (!targetPatient) {
+        res.status(404).json({
+          success: false,
+          error: { code: 'PATIENT_NOT_FOUND', message: 'A verified patient profile is required to upload medical records.' },
+        });
+        return;
       }
-    }
+      authorDoctorId = new mongoose.Types.ObjectId(req.user.id);
+      authorDoctorName = 'Self-Reported / Patient Upload';
+    } else if (req.user.role === 'DOCTOR') {
+      if (!patientId || !mongoose.Types.ObjectId.isValid(patientId)) {
+        res.status(400).json({
+          success: false,
+          error: { code: 'INVALID_PATIENT_ID', message: 'Clinician upload requires a valid patientId in the request body.' },
+        });
+        return;
+      }
 
-    if (!targetPatient) {
-      res.status(404).json({
+      const doctor = (await Doctor.findOne({ userId: req.user.id })) || (await Doctor.findById(req.user.id));
+      if (!doctor) {
+        res.status(403).json({
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'Clinician profile not found' },
+        });
+        return;
+      }
+
+      targetPatient = await Patient.findById(patientId);
+      if (!targetPatient) {
+        res.status(404).json({
+          success: false,
+          error: { code: 'PATIENT_NOT_FOUND', message: 'Target patient profile does not exist.' },
+        });
+        return;
+      }
+
+      // Verify that this doctor has a valid, active/completed clinical encounter with this patient
+      const encounter = await Appointment.findOne({
+        patientId: targetPatient._id,
+        doctorId: doctor._id,
+        status: { $in: ['CONFIRMED', 'CHECKED_IN', 'COMPLETED'] },
+      });
+
+      if (!encounter) {
+        res.status(403).json({
+          success: false,
+          error: {
+            code: 'FORBIDDEN_CLINICAL_ACCESS',
+            message: 'Access Denied: You do not have an active or valid clinical encounter with this patient.',
+          },
+        });
+        return;
+      }
+
+      authorDoctorId = doctor._id;
+      authorDoctorName = doctor.fullName || 'Attending Physician';
+    } else if (req.user.role === 'SUPER_ADMIN' || req.user.role === 'HOSPITAL_ADMIN') {
+      if (!patientId || !mongoose.Types.ObjectId.isValid(patientId)) {
+        res.status(400).json({
+          success: false,
+          error: { code: 'INVALID_PATIENT_ID', message: 'Administrative upload requires a valid patientId in the request body.' },
+        });
+        return;
+      }
+
+      targetPatient = await Patient.findById(patientId);
+      if (!targetPatient) {
+        res.status(404).json({
+          success: false,
+          error: { code: 'PATIENT_NOT_FOUND', message: 'Target patient profile does not exist.' },
+        });
+        return;
+      }
+
+      authorDoctorId = new mongoose.Types.ObjectId(req.user.id);
+      authorDoctorName = 'Clinical Diagnostic Vault';
+    } else {
+      res.status(403).json({
         success: false,
-        error: { code: 'PATIENT_NOT_FOUND', message: 'A verified patient profile is required to upload medical records.' },
+        error: { code: 'FORBIDDEN', message: 'Unauthorized role for medical record creation' },
       });
       return;
     }
 
     const record = await MedicalRecord.create({
       patientId: targetPatient._id,
-      doctorId: new mongoose.Types.ObjectId(req.user.id),
-      doctorName: req.user.role === 'DOCTOR' ? 'Attending Physician' : 'Clinical Diagnostic Vault',
+      doctorId: authorDoctorId,
+      doctorName: authorDoctorName,
       encounterType: encounterType || 'LAB_REPORT',
       title: title || 'Clinical Diagnostic Report',
       category: category || 'Diagnostics & Pathology',
@@ -131,6 +215,7 @@ export const createMedicalRecord = async (req: AuthRequest, res: Response): Prom
       clinicalNotes,
       extractedBiomarkers: Array.isArray(biomarkers) ? biomarkers : [],
       aiInsights: aiInsights || undefined,
+      attachments: Array.isArray(attachments) ? attachments : [],
     });
 
     res.status(201).json({

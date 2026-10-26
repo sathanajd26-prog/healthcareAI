@@ -8,6 +8,7 @@ import { User } from '../models/User';
 import { Patient } from '../models/Patient';
 import { Appointment } from '../models/Appointment';
 import { seedDatabase } from '../seed/seedData';
+import { escapeRegex } from '../modules/doctors/doctorController';
 
 const API_BASE = process.env.API_BASE_URL || 'http://127.0.0.1:5002/api/v1';
 const JWT_SECRET = process.env.JWT_SECRET || 'aegishealth_jwt_secret_for_local_development_testing_only_min_32_chars';
@@ -272,5 +273,45 @@ describe('Doctor Discovery & Profile Verification Test Suite (Stage 4 Fixes)', (
     const notFoundJson: any = await notFoundRes.json();
     assert.strictEqual(notFoundJson.success, false);
     assert.strictEqual(notFoundJson.error.code, 'NOT_FOUND');
+  });
+
+  it('9. SEC-05: Safely handles regex metacharacters and prevents ReDoS attacks', async () => {
+    // 1. Unit verification of escapeRegex
+    const specialChars = '-[]{}()*+?.,\\^$|#';
+    const escaped = escapeRegex(specialChars);
+    assert.strictEqual(escaped.includes('\\('), true);
+    assert.strictEqual(escaped.includes('\\*'), true);
+    assert.strictEqual(escaped.includes('\\['), true);
+
+    // 2. Query with catastrophic backtracking pattern (ReDoS payload)
+    const redosPayload = '(((((.*)*)*)*)+';
+    const redosRes = await fetch(`${API_BASE}/doctors?query=${encodeURIComponent(redosPayload)}`);
+    assert.strictEqual(redosRes.status, 200, 'ReDoS string must not crash or hang server');
+    const redosJson: any = await redosRes.json();
+    assert.strictEqual(redosJson.success, true);
+
+    // 3. Query with unclosed character set or malformed regex
+    const unclosedRegex = '[a-z+(';
+    const unclosedRes = await fetch(`${API_BASE}/doctors?query=${encodeURIComponent(unclosedRegex)}`);
+    assert.strictEqual(unclosedRes.status, 200, 'Malformed regex must be sanitized and not cause SyntaxError');
+    const unclosedJson: any = await unclosedRes.json();
+    assert.strictEqual(unclosedJson.success, true);
+
+    // 4. Query with all metacharacters combined in specialty filter
+    const metaSpecialty = 'Cardio[logy]*+?';
+    const specialtyRes = await fetch(`${API_BASE}/doctors?specialty=${encodeURIComponent(metaSpecialty)}`);
+    assert.strictEqual(specialtyRes.status, 200);
+
+    // 5. Query with extraordinarily long search string (bounded to 100 chars)
+    const longString = 'A'.repeat(2500);
+    const longRes = await fetch(`${API_BASE}/doctors?query=${longString}`);
+    assert.strictEqual(longRes.status, 200, 'Long string must be bounded and handled without memory bloat');
+
+    // 6. Legitimate query with punctuation matches accurately
+    const legitRes = await fetch(`${API_BASE}/doctors?query=Dr.`);
+    assert.strictEqual(legitRes.status, 200);
+    const legitJson: any = await legitRes.json();
+    assert.strictEqual(legitJson.success, true);
+    assert.ok(legitJson.data.doctors.length > 0, 'Legitimate punctuation search should find matching doctors');
   });
 });
