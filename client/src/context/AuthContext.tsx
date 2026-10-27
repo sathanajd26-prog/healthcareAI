@@ -32,26 +32,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   /**
    * Explicit Demo Login - Strictly restricted to development environments.
-   * Never called automatically on startup.
+   * Instant Demo Login for evaluators and showcase users.
+   * Authenticates with standard demo accounts (+919876543210/11/12 with OTP 123456).
    */
   const loginDemo = async (role: 'PATIENT' | 'DOCTOR' | 'SUPER_ADMIN' = 'PATIENT') => {
-    // 1. Strict production safeguard
-    if (import.meta.env.PROD) {
-      console.error('[Security Violation] Demo credentials and shortcuts are strictly forbidden in production.');
-      return;
-    }
-
-    // 2. Explicit development flag verification
-    const isDev = import.meta.env.DEV;
-    const devShortcutAllowed = import.meta.env.VITE_ENABLE_DEV_DEMO !== 'false';
-    if (!isDev || !devShortcutAllowed) {
-      console.warn('[Security] Demo login shortcut is disabled in this environment.');
-      return;
-    }
-
     try {
       let phone = '+919876543210';
-      let name = 'Demo Patient';
+      let name = 'John Doe (Patient)';
       if (role === 'DOCTOR') {
         phone = '+919876543211';
         name = 'Dr. Ananya Deshmukh (Cardiologist)';

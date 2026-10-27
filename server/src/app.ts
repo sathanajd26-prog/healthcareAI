@@ -4,6 +4,8 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import apiRoutes from './routes/api';
 import { env } from './config/env';
+import path from 'path';
+import fs from 'fs';
 
 const app = express();
 
@@ -78,20 +80,40 @@ if (env.NODE_ENV !== 'test') {
   app.use(morgan('dev'));
 }
 
+
 // Versioned API Routes
 app.use('/api/v1', apiRoutes);
 
-// Health check root
-app.get('/', (req, res) => {
-  res.json({
-    name: 'Healthcare Super-App Core API',
-    status: 'ONLINE',
-    version: '1.0.0',
-    documentation: '/api/v1/health',
-  });
-});
+// Static client assets and Single-Page Application (SPA) wildcard serving
+const clientDistPath = path.resolve(__dirname, '../../client/dist');
+const indexHtmlPath = path.join(clientDistPath, 'index.html');
 
-// 404 Route Handler
+if (fs.existsSync(clientDistPath)) {
+  app.use(express.static(clientDistPath));
+
+  // Wildcard SPA fallback: all non-API GET requests serve the React frontend index.html
+  app.get('*', (req: Request, res: Response, next: NextFunction) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) {
+      return next();
+    }
+    if (fs.existsSync(indexHtmlPath)) {
+      return res.sendFile(indexHtmlPath);
+    }
+    return next();
+  });
+} else {
+  // Fallback API root when client build is not present
+  app.get('/', (req: Request, res: Response) => {
+    res.json({
+      name: 'Healthcare Super-App Core API',
+      status: 'ONLINE',
+      version: '1.0.0',
+      documentation: '/api/v1/health',
+    });
+  });
+}
+
+// 404 Route Handler for unmatched API endpoints
 app.use((req: Request, res: Response) => {
   res.status(404).json({
     success: false,

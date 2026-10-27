@@ -14,11 +14,13 @@ import { ProviderPortalPage } from './pages/ProviderPortalPage';
 import { LoginPage } from './pages/LoginPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { AIFloatingWidget } from './components/AIFloatingWidget';
 
 export const App: React.FC = () => {
   return (
-    <div className="min-h-screen flex flex-col bg-clinical-surface">
+    <div className="min-h-screen flex flex-col bg-clinical-surface relative">
       <Navbar />
+      <AIFloatingWidget />
       <main className="flex-1">
         <Routes>
           {/* Public Routes */}

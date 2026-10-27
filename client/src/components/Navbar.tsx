@@ -49,7 +49,7 @@ export const Navbar: React.FC = () => {
   const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'HOSPITAL_ADMIN' || user?.role === 'CLINIC_ADMIN';
   const isGuest = !token || !user;
 
-  const navLinks = isGuest
+  const navLinks: Array<{ label: string; path: string; icon: any; isAIBadge?: boolean }> = isGuest
     ? [
         { label: t('nav.home'), path: '/', icon: Home },
         { label: t('nav.findDoctors'), path: '/doctors', icon: Search },
@@ -60,13 +60,11 @@ export const Navbar: React.FC = () => {
         { label: roleHome.label, path: roleHome.path, icon: Home },
         { label: t('nav.findDoctors'), path: '/doctors', icon: Search },
         { label: 'Telehealth Room', path: '/consultation/room-cardio-99', icon: Video },
-        { label: t('nav.aiAssistant'), path: '/ai-assistant', icon: Bot, isAIBadge: true },
       ]
     : [
         { label: roleHome.label, path: roleHome.path, icon: Home },
         { label: t('nav.findDoctors'), path: '/doctors', icon: Search },
         { label: t('nav.records'), path: '/records', icon: FileText },
-        { label: t('nav.aiAssistant'), path: '/ai-assistant', icon: Bot, isAIBadge: true },
       ];
 
   // Close mobile menu whenever route changes
